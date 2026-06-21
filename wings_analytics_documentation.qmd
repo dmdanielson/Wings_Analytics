@@ -1,0 +1,78 @@
+---
+title: "Wings Analytics Documentation"
+author: "Mike Danielson"
+date: "June 20, 2026"
+format:
+  html:
+    toc: true
+    code-fold: true
+---
+
+::: {.callout-note}
+This report was generated using AI under general human direction. At the time of generation, the contents have not been comprehensively reviewed by a human analyst.
+:::
+
+# Overview
+
+Wings Analytics is a high-performance sailing analytics platform designed to transform raw NMEA GPS data into actionable racing intelligence. The system provides a visual interface for reviewing race performance, comparing actual boat speeds against theoretical polars, and tracking seasonal progress.
+
+# Data pipeline
+
+The application utilizes a multi-stage pipeline to transform raw text-based NMEA sentences into a structured, queryable format.
+
+## Raw data ingestion
+
+The system scans the data directory for `.txt` files containing standard NMEA sentences. The following sentence types are parsed:
+
+- **`$..RMC`**: Provides core navigation data including latitude, longitude, speed over ground (SOG), and course over ground (COG).
+- **`$..DBT` / `$..DPT`**: Provides depth information in meters and feet.
+- **`$..VHW`**: Provides boat speed (Speed Through Water - STW).
+- **`$..MWV`**: Provides wind information, including True Wind Angle (TWA) and True Wind Speed (TWS).
+
+## Processing and synchronization
+
+Because different NMEA sentences are often recorded at slightly different intervals, the pipeline performs **temporal synchronization**. It uses the `$..RMC` sentences as the primary time anchor and aligns depth, wind, and boat speed observations to the nearest RMC timestamp using line-index proximity.
+
+## Storage
+
+The processed and synchronized data is serialized into a single `track_data.rds` file. This allows the Shiny application to load a high-performance, pre-computed dataset instantly without re-parsing thousands of lines of raw text on every session start.
+
+# Polar performance
+
+A core feature of the analytics engine is the comparison of observed performance against a reference polar model.
+
+## Performance Metrics
+
+The system calculates two primary performance deltas:
+
+1. **STW Polar Performance**: The difference between observed Speed Through Water and the reference speed at the same wind speed and angle.
+2. **SOG Polar Performance**: The difference between observed Speed Over Ground and the reference speed.
+
+These metrics allow the user to identify whether speed variations are due to environmental factors (current/tide) or changes in boat handling and sail trim.
+
+# Race calendar integration
+
+To provide context to the raw track data, the system integrates an external race calendar (typically from `Race Calendar.xlsx`). 
+
+The pipeline:
+1. Normalizes calendar columns.
+2. Matches race start and end times to the synchronized track data.
+3. Labels every data point in the track with its corresponding race name, helm, and headsail configuration.
+
+# App structure
+
+The Shiny application is organized into three primary functional areas:
+
+- **Race Season**: A high-level summary table showing completed races, their durations, and overall polar performance rankings.
+- **Races**: An interactive exploration suite featuring:
+  - A **Leaflet map** to visualize the spatial track.
+  - A **Speed plot** showing SOG vs STW with moving averages.
+  - **Polar tables** for detailed performance analysis.
+- **Social**: A landing area for external links and community content.
+
+# Deployment notes
+
+The application is designed for two distinct modes of operation:
+
+- **Local Development**: When running in a local environment, the app is permitted to rebuild the `track_data.rds` file if it is missing, ensuring the latest raw data is always available.
+- **Deployed (shinyapps.io / Posit Connect)**: To ensure stability and speed, the application is configured to be "RDS-only" in deployed environments. Users must include the `track_data.rds` file in the deployment bundle to ensure the app functions correctly.

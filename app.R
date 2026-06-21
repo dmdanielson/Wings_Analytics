@@ -33,7 +33,7 @@ IS_DEPLOYED <- {
 ALLOW_REBUILD_RDS <- !IS_DEPLOYED
 
 # ---------- PATHS ----------
-app_dir_local  <- "G:/My Drive/Personal/Mike/Sailing/Data/Wings_Analytics"
+app_dir_local  <- "C:/Users/mike/Projects/Wings_Analytics"
 data_dir_local <- "G:/My Drive/Personal/Mike/Sailing/Data"
 
 app_dir  <- if (dir.exists(app_dir_local)) app_dir_local else getwd()
@@ -288,21 +288,24 @@ rebuild_rds_from_raw <- function() {
       race_cal_for_rds <- race_cal_raw %>%
         transmute(
           race     = as.character(race),
+          season   = if ("season" %in% names(race_cal_raw)) as.character(season) else NA_character_,
           helm     = as.character(helm),
           headsail = as.character(headsail),
           place    = if ("place" %in% names(race_cal_raw)) as.character(place) else NA_character_,
+          fleet    = if ("fleet" %in% names(race_cal_raw)) as.numeric(fleet) else NA_real_,
+          length   = if ("length" %in% names(race_cal_raw)) as.numeric(length) else NA_real_,
           start    = excel_to_posix_local(start),
           end      = excel_to_posix_local(end)
         ) %>%
-        filter(!is.na(race), nzchar(race), !is.na(start)) %>%
+        filter(!is.na(race), nzchar(race)) %>%
         mutate(
           end = if_else(is.na(end), start, end),
-          start2 = pmin(start, end),
-          end2   = pmax(start, end),
+          start2 = pmin(start, end, na.rm = TRUE),
+          end2   = pmax(start, end, na.rm = TRUE),
           start  = start2,
           end    = end2
         ) %>%
-        select(race, helm, headsail, place, start, end) %>%
+        select(race, season, helm, headsail, place, fleet, length, start, end) %>%
         distinct() %>%
         arrange(start)
       }
@@ -759,12 +762,27 @@ a.wa-shop-btn:active {
     tabPanel(
       "Race Season",
       br(),
-      h4("Race Summary"),
-      DTOutput("race_summary_table")
+      div(
+        style = "
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.10);
+      border-radius: 16px;
+      padding: 18px;
+      box-shadow: 0 10px 28px rgba(0,0,0,0.25);
+      max-width: 760px;
+    ",
+        selectInput(
+          "season_select",
+          "Select Season",
+          choices = sort(unique(data_rds$race_calendar$season[!is.na(data_rds$race_calendar$season)]), decreasing = TRUE)
+        ),
+        br(),
+        DTOutput("season_table")
+      )
     ),
-    
     tabPanel(
       "Races",
+      br(),
       sidebarLayout(
         sidebarPanel(
           uiOutput("helm_selector"),
@@ -792,22 +810,9 @@ a.wa-shop-btn:active {
         )
       )
     ),
-    div(
-      class = "wa-footer",
-      div(
-        class = "wa-footer-text",
-        "© 2026 Wings Analytics. Created by Mike Danielson."
-      ),
-      tags$img(
-        src = "AI6.png",
-        class = "wa-footer-img"
-      )
-    ),  
-    
     tabPanel(
       "Social",
       br(),
-      
       div(
         style = "
       background: rgba(255,255,255,0.04);
@@ -817,7 +822,6 @@ a.wa-shop-btn:active {
       box-shadow: 0 10px 28px rgba(0,0,0,0.25);
       max-width: 760px;
     ",
-        
         # ======================
         # MUSIC SECTION
         # ======================
@@ -893,6 +897,55 @@ a.wa-shop-btn:active {
           class  = "wa-shop-btn",
           "Visit Swag Shop"
         )      )
+    ),
+    tabPanel(
+      "About",
+      br(),
+      div(
+        style = "
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.10);
+      border-radius: 16px;
+      padding: 18px;
+      box-shadow: 0 10px 28px rgba(0,0,0,0.25);
+      max-width: 760px;
+    ",
+        h4("Documentation"),
+        tags$p(
+          "Access the full technical documentation for Wings Analytics, including data pipeline details and performance metric explanations.",
+          style = "color: rgba(232,237,246,0.75); margin-bottom: 14px;"
+        ),
+        tags$a(
+          href   = "wings_analytics_documentation.html",
+          target = "_blank",
+          class  = "wa-shop-btn",
+          "View Documentation"
+        ),
+        tags$hr(style = "border-color: rgba(255,255,255,0.10); margin: 22px 0;"),
+        h4("Project Source"),
+        tags$p(
+          "View the source code and contribute to the project on GitHub.",
+          style = "color: rgba(232,237,246,0.75); margin-bottom: 14px;"
+        ),
+        tags$a(
+          href   = "https://github.com/dmdanielson/Wings_Analytics",
+          target = "_blank",
+          class  = "wa-shop-btn",
+          "Visit GitHub"
+        )
+      )
+    )
+  ),
+  
+  div(
+    class = "wa-footer",
+    div(
+      class = "wa-footer-text",
+      "© 2026 Wings Analytics. Created by Mike Danielson."
+    ),
+    tags$img(
+      src = "AI6.png",
+      class = "wa-footer-img"
     )
   )
 )
@@ -912,14 +965,67 @@ server <- function(input, output, session) {
       )
   })
   
-  output$helm_selector <- renderUI({
-    df <- track_all()
-    helms <- sort(unique(df$helm_ui))
-    checkboxGroupInput(
-      "helm_filter",
-      "Select helms to display",
-      choices  = helms,
-      selected = helms
+  output$season_table <- renderDT({
+    req(input$season_select)
+    
+    # Filter calendar by season column
+    cal <- data_rds$race_calendar %>%
+      filter(!is.na(season), season == input$season_select)
+    
+    if (nrow(cal) == 0) {
+      return(datatable(tibble::tibble(Message = "No races found for this season.")))
+    }
+    
+    # Deduplicate to one row per race (multiple helm segments share the same race)
+    cal_summary <- cal %>%
+      group_by(race) %>%
+      summarise(
+        place  = first(place),
+        fleet  = first(fleet),
+        length = first(length),
+        start  = min(start, na.rm = TRUE),
+        end    = max(end, na.rm = TRUE),
+        .groups = "drop"
+      )
+    
+    # Duration (hours)
+    cal_summary <- cal_summary %>%
+      mutate(
+        duration_hrs = as.numeric(difftime(end, start, units = "hours")),
+        duration_hrs = ifelse(!is.na(duration_hrs) & duration_hrs == 0, NA_real_, duration_hrs),
+        duration_hrs = round(duration_hrs, 2)
+      )
+    
+    res <- cal_summary %>%
+      transmute(
+        Race         = race,
+        Place        = ifelse(is.na(place) | place == "", "", place),
+        Fleet        = ifelse(is.na(fleet), "n/a", as.character(as.integer(fleet))),
+        Length       = ifelse(is.na(length), NA_real_, length),
+        Duration_Hrs = duration_hrs
+      )
+    
+    # Footer row with totals
+    footer_row <- tibble::tibble(
+      Race         = "TOTAL",
+      Place        = "",
+      Fleet        = "",
+      Length       = round(sum(res$Length, na.rm = TRUE), 1),
+      Duration_Hrs = round(sum(res$Duration_Hrs, na.rm = TRUE), 2)
+    )
+    res <- bind_rows(res, footer_row)
+    
+    # Replace NA with blank for display
+    res <- res %>%
+      mutate(
+        Length       = ifelse(is.na(Length), "", as.character(Length)),
+        Duration_Hrs = ifelse(is.na(Duration_Hrs), "", as.character(Duration_Hrs))
+      )
+    
+    datatable(
+      res,
+      options = list(dom = 't', pageLength = 100),
+      rownames = FALSE
     )
   })
   
