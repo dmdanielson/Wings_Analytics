@@ -7,7 +7,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
 <meta name="author" content="Mike Danielson">
-<meta name="dcterms.date" content="2026-06-20">
+<meta name="dcterms.date" content="2026-06-21">
 
 <title>Wings Analytics Documentation</title>
 <style>
@@ -52,19 +52,33 @@ ul.task-list li input[type="checkbox"] {
    
   <ul>
   <li><a href="#overview" id="toc-overview" class="nav-link active" data-scroll-target="#overview">Overview</a></li>
-  <li><a href="#data-pipeline" id="toc-data-pipeline" class="nav-link" data-scroll-target="#data-pipeline">Data pipeline</a>
+  <li><a href="#data-pipeline" id="toc-data-pipeline" class="nav-link" data-scroll-target="#data-pipeline">Data Pipeline</a>
   <ul class="collapse">
-  <li><a href="#raw-data-ingestion" id="toc-raw-data-ingestion" class="nav-link" data-scroll-target="#raw-data-ingestion">Raw data ingestion</a></li>
-  <li><a href="#processing-and-synchronization" id="toc-processing-and-synchronization" class="nav-link" data-scroll-target="#processing-and-synchronization">Processing and synchronization</a></li>
+  <li><a href="#raw-data-ingestion" id="toc-raw-data-ingestion" class="nav-link" data-scroll-target="#raw-data-ingestion">Raw Data Ingestion</a></li>
+  <li><a href="#processing-and-synchronization" id="toc-processing-and-synchronization" class="nav-link" data-scroll-target="#processing-and-synchronization">Processing and Synchronization</a></li>
+  <li><a href="#data-cleaning" id="toc-data-cleaning" class="nav-link" data-scroll-target="#data-cleaning">Data Cleaning</a></li>
   <li><a href="#storage" id="toc-storage" class="nav-link" data-scroll-target="#storage">Storage</a></li>
   </ul></li>
-  <li><a href="#polar-performance" id="toc-polar-performance" class="nav-link" data-scroll-target="#polar-performance">Polar performance</a>
+  <li><a href="#polar-performance" id="toc-polar-performance" class="nav-link" data-scroll-target="#polar-performance">Polar Performance</a>
   <ul class="collapse">
+  <li><a href="#how-polar-binning-works" id="toc-how-polar-binning-works" class="nav-link" data-scroll-target="#how-polar-binning-works">How Polar Binning Works</a></li>
   <li><a href="#performance-metrics" id="toc-performance-metrics" class="nav-link" data-scroll-target="#performance-metrics">Performance Metrics</a></li>
+  <li><a href="#polar-tables-in-the-app" id="toc-polar-tables-in-the-app" class="nav-link" data-scroll-target="#polar-tables-in-the-app">Polar Tables in the App</a></li>
   </ul></li>
-  <li><a href="#race-calendar-integration" id="toc-race-calendar-integration" class="nav-link" data-scroll-target="#race-calendar-integration">Race calendar integration</a></li>
-  <li><a href="#app-structure" id="toc-app-structure" class="nav-link" data-scroll-target="#app-structure">App structure</a></li>
-  <li><a href="#deployment-notes" id="toc-deployment-notes" class="nav-link" data-scroll-target="#deployment-notes">Deployment notes</a></li>
+  <li><a href="#race-calendar-integration" id="toc-race-calendar-integration" class="nav-link" data-scroll-target="#race-calendar-integration">Race Calendar Integration</a>
+  <ul class="collapse">
+  <li><a href="#calendar-columns" id="toc-calendar-columns" class="nav-link" data-scroll-target="#calendar-columns">Calendar Columns</a></li>
+  <li><a href="#matching-process" id="toc-matching-process" class="nav-link" data-scroll-target="#matching-process">Matching Process</a></li>
+  </ul></li>
+  <li><a href="#app-structure" id="toc-app-structure" class="nav-link" data-scroll-target="#app-structure">App Structure</a>
+  <ul class="collapse">
+  <li><a href="#race-seasons" id="toc-race-seasons" class="nav-link" data-scroll-target="#race-seasons">Race Seasons</a></li>
+  <li><a href="#race-analysis" id="toc-race-analysis" class="nav-link" data-scroll-target="#race-analysis">Race Analysis</a></li>
+  <li><a href="#social" id="toc-social" class="nav-link" data-scroll-target="#social">Social</a></li>
+  <li><a href="#about" id="toc-about" class="nav-link" data-scroll-target="#about">About</a></li>
+  </ul></li>
+  <li><a href="#deployment" id="toc-deployment" class="nav-link" data-scroll-target="#deployment">Deployment</a></li>
+  <li><a href="#technical-notes" id="toc-technical-notes" class="nav-link" data-scroll-target="#technical-notes">Technical Notes</a></li>
   </ul>
 </nav>
 </div>
@@ -89,7 +103,7 @@ ul.task-list li input[type="checkbox"] {
     <div>
     <div class="quarto-title-meta-heading">Published</div>
     <div class="quarto-title-meta-contents">
-      <p class="date">June 20, 2026</p>
+      <p class="date">June 21, 2026</p>
     </div>
   </div>
   
@@ -101,83 +115,197 @@ ul.task-list li input[type="checkbox"] {
 </header>
 
 
-<div class="callout callout-style-default callout-note callout-titled">
-<div class="callout-header d-flex align-content-center">
-<div class="callout-icon-container">
-<i class="callout-icon"></i>
-</div>
-<div class="callout-title-container flex-fill">
-Note
-</div>
-</div>
-<div class="callout-body-container callout-body">
-<p>This report was generated using AI under general human direction. At the time of generation, the contents have not been comprehensively reviewed by a human analyst.</p>
-</div>
-</div>
 <section id="overview" class="level1">
 <h1>Overview</h1>
-<p>Wings Analytics is a high-performance sailing analytics platform designed to transform raw NMEA GPS data into actionable racing intelligence. The system provides a visual interface for reviewing race performance, comparing actual boat speeds against theoretical polars, and tracking seasonal progress.</p>
+<p>Wings Analytics is a sailing performance analytics platform built on R and Shiny. It transforms raw NMEA GPS data logged from onboard instruments into interactive race analysis, including spatial track visualization, speed diagnostics, and polar performance benchmarking. The application integrates an external race calendar to label track data with race metadata and provides a season-level view of racing activity.</p>
 </section>
 <section id="data-pipeline" class="level1">
-<h1>Data pipeline</h1>
-<p>The application utilizes a multi-stage pipeline to transform raw text-based NMEA sentences into a structured, queryable format.</p>
+<h1>Data Pipeline</h1>
+<p>The application uses a multi-stage pipeline to convert raw text-based NMEA sentences into a structured, analysis-ready dataset.</p>
 <section id="raw-data-ingestion" class="level2">
-<h2 class="anchored" data-anchor-id="raw-data-ingestion">Raw data ingestion</h2>
-<p>The system scans the data directory for <code>.txt</code> files containing standard NMEA sentences. The following sentence types are parsed:</p>
-<ul>
-<li><strong><code>$..RMC</code></strong>: Provides core navigation data including latitude, longitude, speed over ground (SOG), and course over ground (COG).</li>
-<li><strong><code>$..DBT</code> / <code>$..DPT</code></strong>: Provides depth information in meters and feet.</li>
-<li><strong><code>$..VHW</code></strong>: Provides boat speed (Speed Through Water - STW).</li>
-<li><strong><code>$..MWV</code></strong>: Provides wind information, including True Wind Angle (TWA) and True Wind Speed (TWS).</li>
-</ul>
+<h2 class="anchored" data-anchor-id="raw-data-ingestion">Raw Data Ingestion</h2>
+<p>The system scans a configured data directory for <code>.txt</code> files containing standard NMEA 0183 sentences. Four sentence types are parsed:</p>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 13%">
+<col style="width: 66%">
+<col style="width: 20%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Sentence</th>
+<th>Data Provided</th>
+<th>Parser Function</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>$..RMC</code></td>
+<td>Latitude, longitude, speed over ground (SOG), course over ground (COG), UTC date/time</td>
+<td><code>parse_rmc_any()</code></td>
+</tr>
+<tr class="even">
+<td><code>$..DBT/DPT</code></td>
+<td>Water depth in meters and feet</td>
+<td><code>parse_depth()</code></td>
+</tr>
+<tr class="odd">
+<td><code>$..VHW</code></td>
+<td>Boat speed through water (STW)</td>
+<td><code>parse_boat_speed()</code></td>
+</tr>
+<tr class="even">
+<td><code>$..MWV</code></td>
+<td>True or apparent wind angle (TWA) and wind speed (TWS), with unit conversion (knots, m/s, km/h)</td>
+<td><code>parse_wind_mwv()</code></td>
+</tr>
+</tbody>
+</table>
+<p>Coordinate parsing converts NMEA degree-minute format to decimal degrees via <code>convert_degmin()</code>. Date and time fields from the RMC sentence are combined into a UTC <code>POSIXct</code> timestamp, then converted to the local timezone (Eastern) for display and calendar matching.</p>
 </section>
 <section id="processing-and-synchronization" class="level2">
-<h2 class="anchored" data-anchor-id="processing-and-synchronization">Processing and synchronization</h2>
-<p>Because different NMEA sentences are often recorded at slightly different intervals, the pipeline performs <strong>temporal synchronization</strong>. It uses the <code>$..RMC</code> sentences as the primary time anchor and aligns depth, wind, and boat speed observations to the nearest RMC timestamp using line-index proximity.</p>
+<h2 class="anchored" data-anchor-id="processing-and-synchronization">Processing and Synchronization</h2>
+<p>Different NMEA sentences are recorded at varying intervals and do not share a common timestamp. The pipeline uses <code>$..RMC</code> sentences as the primary time anchor. The function <code>nearest_sync_by_line_index()</code> aligns depth, wind, and boat speed observations to their nearest RMC record by raw file line number using <code>findInterval()</code>. This approach is efficient and avoids expensive datetime joins across hundreds of thousands of records.</p>
+<p>After synchronization, aggregated values (mean depth, mean STW, mean wind) are joined to the RMC track by <code>datetime_utc</code>.</p>
+</section>
+<section id="data-cleaning" class="level2">
+<h2 class="anchored" data-anchor-id="data-cleaning">Data Cleaning</h2>
+<p>Several cleaning steps are applied to the synchronized track data:</p>
+<ul>
+<li><strong>Speed filtering</strong>: SOG values above 15 knots are excluded, as they indicate GPS noise or sensor errors rather than actual sailing speed.</li>
+<li><strong>Exclusion zone</strong>: Track points within 1,000 feet of a fixed coordinate (the home dock) are removed to exclude pre-race instrument warmup data.</li>
+<li><strong>Teleport detection</strong>: Isolated GPS points that imply physically impossible jumps (e.g., from UTC date-rollover bugs) are detected by computing implied speed to both temporal neighbors. If a point implies speeds exceeding 30 knots to both its predecessor and successor, it is dropped.</li>
+</ul>
 </section>
 <section id="storage" class="level2">
 <h2 class="anchored" data-anchor-id="storage">Storage</h2>
-<p>The processed and synchronized data is serialized into a single <code>track_data.rds</code> file. This allows the Shiny application to load a high-performance, pre-computed dataset instantly without re-parsing thousands of lines of raw text on every session start.</p>
+<p>The processed dataset is serialized into <code>track_data.rds</code> as a named list containing four elements:</p>
+<ul>
+<li><code>track_all</code>: The synchronized track data with all sensor channels merged.</li>
+<li><code>polar_ref</code>: The raw reference polar table from <code>Polars.xlsx</code>.</li>
+<li><code>polar_ref_long</code>: The polar table pivoted to long format (TWS, TWA, reference BSP).</li>
+<li><code>race_calendar</code>: The normalized race calendar from <code>Race Calendar.xlsx</code>.</li>
+</ul>
+<p>This allows the Shiny app to load a pre-computed dataset on startup without re-parsing raw files each session.</p>
 </section>
 </section>
 <section id="polar-performance" class="level1">
-<h1>Polar performance</h1>
-<p>A core feature of the analytics engine is the comparison of observed performance against a reference polar model.</p>
+<h1>Polar Performance</h1>
+<p>A core feature is comparing observed boat performance against a theoretical reference polar model loaded from <code>Polars.xlsx</code>.</p>
+<section id="how-polar-binning-works" class="level2">
+<h2 class="anchored" data-anchor-id="how-polar-binning-works">How Polar Binning Works</h2>
+<p>Observed TWS and TWA values are snapped to the nearest reference polar grid point using <code>findInterval()</code> with <code>all.inside = TRUE</code>. This creates discrete bins that match the reference table’s TWS and TWA breakpoints. Observed speeds are then averaged within each bin and compared to the reference value.</p>
+</section>
 <section id="performance-metrics" class="level2">
 <h2 class="anchored" data-anchor-id="performance-metrics">Performance Metrics</h2>
-<p>The system calculates two primary performance deltas:</p>
+<p>Two delta metrics are computed for every track observation that has valid wind and speed data:</p>
+<ul>
+<li><strong>STW Polar Performance</strong> = Observed STW − Reference BSP at the matched TWS/TWA bin. This isolates boat handling and sail trim quality, as STW is unaffected by current.</li>
+<li><strong>SOG Polar Performance</strong> = Observed SOG − Reference BSP. This captures the combined effect of boat handling plus environmental factors like current and tide.</li>
+</ul>
+<p>Positive values indicate the boat exceeded the reference polar; negative values indicate underperformance.</p>
+</section>
+<section id="polar-tables-in-the-app" class="level2">
+<h2 class="anchored" data-anchor-id="polar-tables-in-the-app">Polar Tables in the App</h2>
+<p>The Race Analysis tab presents five polar table views:</p>
 <ol type="1">
-<li><strong>STW Polar Performance</strong>: The difference between observed Speed Through Water and the reference speed at the same wind speed and angle.</li>
-<li><strong>SOG Polar Performance</strong>: The difference between observed Speed Over Ground and the reference speed.</li>
+<li><strong>Observed STW Polars</strong>: Average STW in each TWS/TWA bin for the selected race.</li>
+<li><strong>Observed SOG Polars</strong>: Average SOG in each bin.</li>
+<li><strong>Reference Polars</strong>: The theoretical target speeds from <code>Polars.xlsx</code>.</li>
+<li><strong>STW Polar Performance</strong>: STW minus reference, with row averages and column footer averages.</li>
+<li><strong>SOG Polar Performance</strong>: SOG minus reference, with the same summary statistics.</li>
 </ol>
-<p>These metrics allow the user to identify whether speed variations are due to environmental factors (current/tide) or changes in boat handling and sail trim.</p>
 </section>
 </section>
 <section id="race-calendar-integration" class="level1">
-<h1>Race calendar integration</h1>
-<p>To provide context to the raw track data, the system integrates an external race calendar (typically from <code>Race Calendar.xlsx</code>).</p>
-<p>The pipeline: 1. Normalizes calendar columns. 2. Matches race start and end times to the synchronized track data. 3. Labels every data point in the track with its corresponding race name, helm, and headsail configuration.</p>
+<h1>Race Calendar Integration</h1>
+<p>The system integrates an external Excel calendar (<code>Race Calendar.xlsx</code>) to label track data with race context.</p>
+<section id="calendar-columns" class="level2">
+<h2 class="anchored" data-anchor-id="calendar-columns">Calendar Columns</h2>
+<p>The calendar is expected to have at minimum: <code>race</code>, <code>helm</code>, <code>headsail</code>, <code>start</code>, and <code>end</code>. Optional columns include <code>season</code>, <code>series</code>, <code>place</code>, <code>fleet</code>, and <code>length</code>. Column names are normalized to lowercase with underscores via <code>normalize_excel_names()</code>.</p>
+</section>
+<section id="matching-process" class="level2">
+<h2 class="anchored" data-anchor-id="matching-process">Matching Process</h2>
+<p>During RDS construction (<code>rebuild_rds_from_raw()</code>), each calendar entry defines a time window. The pipeline iterates through calendar rows and labels all track points whose local datetime falls within the <code>start</code>–<code>end</code> window with the corresponding race name, helm, and headsail. This means a single race name (e.g., “Thursday Night Race”) can appear multiple times in the calendar on different dates, and each occurrence is treated as a distinct race event.</p>
+</section>
 </section>
 <section id="app-structure" class="level1">
-<h1>App structure</h1>
-<p>The Shiny application is organized into three primary functional areas:</p>
+<h1>App Structure</h1>
+<p>The Shiny application is organized into the following tabs:</p>
+<section id="race-seasons" class="level2">
+<h2 class="anchored" data-anchor-id="race-seasons">Race Seasons</h2>
+<p>A season-level summary of all races in the calendar. The user selects a season from a dropdown, and a table displays each race event with its date, series, place, fleet size, distance, and elapsed time. A TOTAL row at the bottom sums distance and duration. Races with the same name on different dates are listed as separate rows (grouped by race name and start date).</p>
+<p>Clicking any race row navigates directly to the Race Analysis tab for that race.</p>
+</section>
+<section id="race-analysis" class="level2">
+<h2 class="anchored" data-anchor-id="race-analysis">Race Analysis</h2>
+<p>Displays detailed analysis for a single race selected from the Race Seasons table. At the top, a summary table shows key metrics:</p>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 50%">
+<col style="width: 50%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Metric</th>
+<th>Source</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Race name, date, distance, place/fleet</td>
+<td>Race calendar</td>
+</tr>
+<tr class="even">
+<td>Elapsed time</td>
+<td>Track data (max − min local time)</td>
+</tr>
+<tr class="odd">
+<td>Avg/Max STW and SOG</td>
+<td>Track data</td>
+</tr>
+<tr class="even">
+<td>Avg/Max TWS</td>
+<td>Track data</td>
+</tr>
+<tr class="odd">
+<td>STW and SOG Polar Performance</td>
+<td>Track data (mean of per-observation deltas)</td>
+</tr>
+</tbody>
+</table>
+<p>Below the summary:</p>
 <ul>
-<li><strong>Race Season</strong>: A high-level summary table showing completed races, their durations, and overall polar performance rankings.</li>
-<li><strong>Races</strong>: An interactive exploration suite featuring:
-<ul>
-<li>A <strong>Leaflet map</strong> to visualize the spatial track.</li>
-<li>A <strong>Speed plot</strong> showing SOG vs STW with moving averages.</li>
-<li><strong>Polar tables</strong> for detailed performance analysis.</li>
-</ul></li>
-<li><strong>Social</strong>: A landing area for external links and community content.</li>
+<li><strong>Leaflet map</strong>: GPS track rendered as polylines, color-coded by day (local date) to distinguish legs of multiday races.</li>
+<li><strong>Speed plot</strong>: Raw SOG and STW traces overlaid with 1-minute moving averages, faceted by day.</li>
+<li><strong>Polar tables</strong>: Five sub-tabs as described in the Polar Performance section above.</li>
 </ul>
 </section>
-<section id="deployment-notes" class="level1">
-<h1>Deployment notes</h1>
-<p>The application is designed for two distinct modes of operation:</p>
+<section id="social" class="level2">
+<h2 class="anchored" data-anchor-id="social">Social</h2>
+<p>Links to external content including Spotify tracks by Wings J112, YouTube videos, and the Wings merchandise shop.</p>
+</section>
+<section id="about" class="level2">
+<h2 class="anchored" data-anchor-id="about">About</h2>
+<p>Links to this documentation and the project’s GitHub repository.</p>
+</section>
+</section>
+<section id="deployment" class="level1">
+<h1>Deployment</h1>
+<p>The application supports two modes of operation controlled by environment detection:</p>
 <ul>
-<li><strong>Local Development</strong>: When running in a local environment, the app is permitted to rebuild the <code>track_data.rds</code> file if it is missing, ensuring the latest raw data is always available.</li>
-<li><strong>Deployed (shinyapps.io / Posit Connect)</strong>: To ensure stability and speed, the application is configured to be “RDS-only” in deployed environments. Users must include the <code>track_data.rds</code> file in the deployment bundle to ensure the app functions correctly.</li>
+<li><strong>Local development</strong>: If <code>track_data.rds</code> is missing, the app rebuilds it from raw <code>.txt</code> files, <code>Race Calendar.xlsx</code>, and <code>Polars.xlsx</code> in the configured data directory. This ensures the latest data is always incorporated.</li>
+<li><strong>Deployed (shinyapps.io / Posit Connect)</strong>: Rebuilding is disabled. The <code>track_data.rds</code> file must be included in the deployment bundle alongside <code>app.R</code>. This avoids dependency on external file paths and ensures fast, reliable startup.</li>
+</ul>
+<p>Environment detection checks for standard deployment environment variables (<code>SHINY_PORT</code>, <code>RSCONNECT_SERVER</code>, etc.). The <code>IS_DEPLOYED</code> flag controls whether <code>rebuild_rds_from_raw()</code> is permitted to run.</p>
+</section>
+<section id="technical-notes" class="level1">
+<h1>Technical Notes</h1>
+<ul>
+<li>All times are stored internally as UTC (<code>POSIXct</code>) and converted to Eastern time (<code>America/New_York</code>) for display and calendar matching via <code>lubridate::with_tz()</code>.</li>
+<li>The <code>geosphere</code> package is used for Haversine distance calculations (exclusion zone filtering and teleport detection).</li>
+<li>DT (DataTables) is used for all interactive tables, with custom JavaScript footer callbacks for computing column averages in the polar performance tables.</li>
+<li>The app uses a dark theme implemented via inline CSS, with a glass-morphism card aesthetic.</li>
 </ul>
 </section>
 

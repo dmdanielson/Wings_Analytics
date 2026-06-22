@@ -1,78 +1,146 @@
 ---
 title: "Wings Analytics Documentation"
 author: "Mike Danielson"
-date: "June 20, 2026"
+date: "June 21, 2026"
 format:
   html:
     toc: true
     code-fold: true
 ---
 
-::: {.callout-note}
-This report was generated using AI under general human direction. At the time of generation, the contents have not been comprehensively reviewed by a human analyst.
-:::
-
 # Overview
 
-Wings Analytics is a high-performance sailing analytics platform designed to transform raw NMEA GPS data into actionable racing intelligence. The system provides a visual interface for reviewing race performance, comparing actual boat speeds against theoretical polars, and tracking seasonal progress.
+Wings Analytics is a sailing performance analytics platform built on R and Shiny. It transforms raw NMEA GPS data logged from onboard instruments into interactive race analysis, including spatial track visualization, speed diagnostics, and polar performance benchmarking. The application integrates an external race calendar to label track data with race metadata and provides a season-level view of racing activity.
 
-# Data pipeline
+# Data Pipeline
 
-The application utilizes a multi-stage pipeline to transform raw text-based NMEA sentences into a structured, queryable format.
+The application uses a multi-stage pipeline to convert raw text-based NMEA sentences into a structured, analysis-ready dataset.
 
-## Raw data ingestion
+## Raw Data Ingestion
 
-The system scans the data directory for `.txt` files containing standard NMEA sentences. The following sentence types are parsed:
+The system scans a configured data directory for `.txt` files containing standard NMEA 0183 sentences. Four sentence types are parsed:
 
-- **`$..RMC`**: Provides core navigation data including latitude, longitude, speed over ground (SOG), and course over ground (COG).
-- **`$..DBT` / `$..DPT`**: Provides depth information in meters and feet.
-- **`$..VHW`**: Provides boat speed (Speed Through Water - STW).
-- **`$..MWV`**: Provides wind information, including True Wind Angle (TWA) and True Wind Speed (TWS).
+| Sentence     | Data Provided                                                        | Parser Function      |
+|--------------|----------------------------------------------------------------------|----------------------|
+| `$..RMC`     | Latitude, longitude, speed over ground (SOG), course over ground (COG), UTC date/time | `parse_rmc_any()`    |
+| `$..DBT/DPT` | Water depth in meters and feet                                       | `parse_depth()`      |
+| `$..VHW`     | Boat speed through water (STW)                                       | `parse_boat_speed()` |
+| `$..MWV`     | True or apparent wind angle (TWA) and wind speed (TWS), with unit conversion (knots, m/s, km/h) | `parse_wind_mwv()`   |
 
-## Processing and synchronization
+Coordinate parsing converts NMEA degree-minute format to decimal degrees via `convert_degmin()`. Date and time fields from the RMC sentence are combined into a UTC `POSIXct` timestamp, then converted to the local timezone (Eastern) for display and calendar matching.
 
-Because different NMEA sentences are often recorded at slightly different intervals, the pipeline performs **temporal synchronization**. It uses the `$..RMC` sentences as the primary time anchor and aligns depth, wind, and boat speed observations to the nearest RMC timestamp using line-index proximity.
+## Processing and Synchronization
+
+Different NMEA sentences are recorded at varying intervals and do not share a common timestamp. The pipeline uses `$..RMC` sentences as the primary time anchor. The function `nearest_sync_by_line_index()` aligns depth, wind, and boat speed observations to their nearest RMC record by raw file line number using `findInterval()`. This approach is efficient and avoids expensive datetime joins across hundreds of thousands of records.
+
+After synchronization, aggregated values (mean depth, mean STW, mean wind) are joined to the RMC track by `datetime_utc`.
+
+## Data Cleaning
+
+Several cleaning steps are applied to the synchronized track data:
+
+- **Speed filtering**: SOG values above 15 knots are excluded, as they indicate GPS noise or sensor errors rather than actual sailing speed.
+- **Exclusion zone**: Track points within 1,000 feet of a fixed coordinate (the home dock) are removed to exclude pre-race instrument warmup data.
+- **Teleport detection**: Isolated GPS points that imply physically impossible jumps (e.g., from UTC date-rollover bugs) are detected by computing implied speed to both temporal neighbors. If a point implies speeds exceeding 30 knots to both its predecessor and successor, it is dropped.
 
 ## Storage
 
-The processed and synchronized data is serialized into a single `track_data.rds` file. This allows the Shiny application to load a high-performance, pre-computed dataset instantly without re-parsing thousands of lines of raw text on every session start.
+The processed dataset is serialized into `track_data.rds` as a named list containing four elements:
 
-# Polar performance
+- `track_all`: The synchronized track data with all sensor channels merged.
+- `polar_ref`: The raw reference polar table from `Polars.xlsx`.
+- `polar_ref_long`: The polar table pivoted to long format (TWS, TWA, reference BSP).
+- `race_calendar`: The normalized race calendar from `Race Calendar.xlsx`.
 
-A core feature of the analytics engine is the comparison of observed performance against a reference polar model.
+This allows the Shiny app to load a pre-computed dataset on startup without re-parsing raw files each session.
+
+# Polar Performance
+
+A core feature is comparing observed boat performance against a theoretical reference polar model loaded from `Polars.xlsx`.
+
+## How Polar Binning Works
+
+Observed TWS and TWA values are snapped to the nearest reference polar grid point using `findInterval()` with `all.inside = TRUE`. This creates discrete bins that match the reference table's TWS and TWA breakpoints. Observed speeds are then averaged within each bin and compared to the reference value.
 
 ## Performance Metrics
 
-The system calculates two primary performance deltas:
+Two delta metrics are computed for every track observation that has valid wind and speed data:
 
-1. **STW Polar Performance**: The difference between observed Speed Through Water and the reference speed at the same wind speed and angle.
-2. **SOG Polar Performance**: The difference between observed Speed Over Ground and the reference speed.
+- **STW Polar Performance** = Observed STW − Reference BSP at the matched TWS/TWA bin. This isolates boat handling and sail trim quality, as STW is unaffected by current.
+- **SOG Polar Performance** = Observed SOG − Reference BSP. This captures the combined effect of boat handling plus environmental factors like current and tide.
 
-These metrics allow the user to identify whether speed variations are due to environmental factors (current/tide) or changes in boat handling and sail trim.
+Positive values indicate the boat exceeded the reference polar; negative values indicate underperformance.
 
-# Race calendar integration
+## Polar Tables in the App
 
-To provide context to the raw track data, the system integrates an external race calendar (typically from `Race Calendar.xlsx`). 
+The Race Analysis tab presents five polar table views:
 
-The pipeline:
-1. Normalizes calendar columns.
-2. Matches race start and end times to the synchronized track data.
-3. Labels every data point in the track with its corresponding race name, helm, and headsail configuration.
+1. **Observed STW Polars**: Average STW in each TWS/TWA bin for the selected race.
+2. **Observed SOG Polars**: Average SOG in each bin.
+3. **Reference Polars**: The theoretical target speeds from `Polars.xlsx`.
+4. **STW Polar Performance**: STW minus reference, with row averages and column footer averages.
+5. **SOG Polar Performance**: SOG minus reference, with the same summary statistics.
 
-# App structure
+# Race Calendar Integration
 
-The Shiny application is organized into three primary functional areas:
+The system integrates an external Excel calendar (`Race Calendar.xlsx`) to label track data with race context.
 
-- **Race Season**: A high-level summary table showing completed races, their durations, and overall polar performance rankings.
-- **Races**: An interactive exploration suite featuring:
-  - A **Leaflet map** to visualize the spatial track.
-  - A **Speed plot** showing SOG vs STW with moving averages.
-  - **Polar tables** for detailed performance analysis.
-- **Social**: A landing area for external links and community content.
+## Calendar Columns
 
-# Deployment notes
+The calendar is expected to have at minimum: `race`, `helm`, `headsail`, `start`, and `end`. Optional columns include `season`, `series`, `place`, `fleet`, and `length`. Column names are normalized to lowercase with underscores via `normalize_excel_names()`.
 
-The application is designed for two distinct modes of operation:
+## Matching Process
 
-- **Local Development**: When running in a local environment, the app is permitted to rebuild the `track_data.rds` file if it is missing, ensuring the latest raw data is always available.
-- **Deployed (shinyapps.io / Posit Connect)**: To ensure stability and speed, the application is configured to be "RDS-only" in deployed environments. Users must include the `track_data.rds` file in the deployment bundle to ensure the app functions correctly.
+During RDS construction (`rebuild_rds_from_raw()`), each calendar entry defines a time window. The pipeline iterates through calendar rows and labels all track points whose local datetime falls within the `start`–`end` window with the corresponding race name, helm, and headsail. This means a single race name (e.g., "Thursday Night Race") can appear multiple times in the calendar on different dates, and each occurrence is treated as a distinct race event.
+
+# App Structure
+
+The Shiny application is organized into the following tabs:
+
+## Race Seasons
+
+A season-level summary of all races in the calendar. The user selects a season from a dropdown, and a table displays each race event with its date, series, place, fleet size, distance, and elapsed time. A TOTAL row at the bottom sums distance and duration. Races with the same name on different dates are listed as separate rows (grouped by race name and start date).
+
+Clicking any race row navigates directly to the Race Analysis tab for that race.
+
+## Race Analysis
+
+Displays detailed analysis for a single race selected from the Race Seasons table. At the top, a summary table shows key metrics:
+
+| Metric | Source |
+|--------|--------|
+| Race name, date, distance, place/fleet | Race calendar |
+| Elapsed time | Track data (max − min local time) |
+| Avg/Max STW and SOG | Track data |
+| Avg/Max TWS | Track data |
+| STW and SOG Polar Performance | Track data (mean of per-observation deltas) |
+
+Below the summary:
+
+- **Leaflet map**: GPS track rendered as polylines, color-coded by day (local date) to distinguish legs of multiday races.
+- **Speed plot**: Raw SOG and STW traces overlaid with 1-minute moving averages, faceted by day.
+- **Polar tables**: Five sub-tabs as described in the Polar Performance section above.
+
+## Social
+
+Links to external content including Spotify tracks by Wings J112, YouTube videos, and the Wings merchandise shop.
+
+## About
+
+Links to this documentation and the project's GitHub repository.
+
+# Deployment
+
+The application supports two modes of operation controlled by environment detection:
+
+- **Local development**: If `track_data.rds` is missing, the app rebuilds it from raw `.txt` files, `Race Calendar.xlsx`, and `Polars.xlsx` in the configured data directory. This ensures the latest data is always incorporated.
+- **Deployed (shinyapps.io / Posit Connect)**: Rebuilding is disabled. The `track_data.rds` file must be included in the deployment bundle alongside `app.R`. This avoids dependency on external file paths and ensures fast, reliable startup.
+
+Environment detection checks for standard deployment environment variables (`SHINY_PORT`, `RSCONNECT_SERVER`, etc.). The `IS_DEPLOYED` flag controls whether `rebuild_rds_from_raw()` is permitted to run.
+
+# Technical Notes
+
+- All times are stored internally as UTC (`POSIXct`) and converted to Eastern time (`America/New_York`) for display and calendar matching via `lubridate::with_tz()`.
+- The `geosphere` package is used for Haversine distance calculations (exclusion zone filtering and teleport detection).
+- DT (DataTables) is used for all interactive tables, with custom JavaScript footer callbacks for computing column averages in the polar performance tables.
+- The app uses a dark theme implemented via inline CSS, with a glass-morphism card aesthetic.

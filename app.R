@@ -289,6 +289,7 @@ rebuild_rds_from_raw <- function() {
         transmute(
           race     = as.character(race),
           season   = if ("season" %in% names(race_cal_raw)) as.character(season) else NA_character_,
+          series   = if ("series" %in% names(race_cal_raw)) as.character(series) else NA_character_,
           helm     = as.character(helm),
           headsail = as.character(headsail),
           place    = if ("place" %in% names(race_cal_raw)) as.character(place) else NA_character_,
@@ -305,7 +306,7 @@ rebuild_rds_from_raw <- function() {
           start  = start2,
           end    = end2
         ) %>%
-        select(race, season, helm, headsail, place, fleet, length, start, end) %>%
+        select(race, season, series, helm, headsail, place, fleet, length, start, end) %>%
         distinct() %>%
         arrange(start)
       }
@@ -744,6 +745,105 @@ a.wa-shop-btn:active {
   transform: translateY(0px) !important;
   box-shadow: none !important;
 }
+
+/* ===== Social Tab ===== */
+.social-section {
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.10);
+  border-radius: 16px;
+  padding: 22px 24px;
+  box-shadow: 0 10px 28px rgba(0,0,0,0.25);
+  max-width: 800px;
+  margin-bottom: 18px;
+}
+.social-section-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.social-section-header h4 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 650;
+}
+.social-section-header svg {
+  flex-shrink: 0;
+}
+.social-subtitle {
+  color: rgba(232,237,246,0.60);
+  font-size: 13px;
+  margin: -8px 0 14px 0;
+}
+.song-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 10px;
+}
+a.social-link {
+  display: flex !important;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px !important;
+  border-radius: 12px !important;
+  border: 1px solid rgba(255,255,255,0.12) !important;
+  background: rgba(255,255,255,0.04) !important;
+  color: #e8edf6 !important;
+  text-decoration: none !important;
+  font-weight: 500 !important;
+  font-size: 14px !important;
+  transition: all 0.15s ease !important;
+}
+a.social-link:hover {
+  background: rgba(255,255,255,0.10) !important;
+  border-color: rgba(255,255,255,0.25) !important;
+  transform: translateY(-1px) !important;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.3) !important;
+}
+a.social-link .link-num {
+  color: rgba(232,237,246,0.40);
+  font-size: 12px;
+  font-weight: 600;
+  min-width: 16px;
+}
+a.social-artist-link {
+  display: inline-flex !important;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 18px !important;
+  border-radius: 20px !important;
+  border: 1px solid rgba(29,185,84,0.35) !important;
+  background: rgba(29,185,84,0.10) !important;
+  color: #1DB954 !important;
+  text-decoration: none !important;
+  font-weight: 600 !important;
+  font-size: 14px !important;
+  margin-bottom: 14px !important;
+  transition: all 0.15s ease !important;
+}
+a.social-artist-link:hover {
+  background: rgba(29,185,84,0.20) !important;
+  border-color: rgba(29,185,84,0.50) !important;
+}
+a.social-yt-link {
+  display: inline-flex !important;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 20px !important;
+  border-radius: 12px !important;
+  border: 1px solid rgba(255,0,0,0.25) !important;
+  background: rgba(255,0,0,0.08) !important;
+  color: #e8edf6 !important;
+  text-decoration: none !important;
+  font-weight: 600 !important;
+  font-size: 14px !important;
+  transition: all 0.15s ease !important;
+}
+a.social-yt-link:hover {
+  background: rgba(255,0,0,0.15) !important;
+  border-color: rgba(255,0,0,0.40) !important;
+  transform: translateY(-1px) !important;
+}
 "))
   ),
   
@@ -759,8 +859,9 @@ a.wa-shop-btn:active {
   ),
   
   tabsetPanel(
+    id = "main_tabs",
     tabPanel(
-      "Race Season",
+      "Race Seasons",
       br(),
       div(
         style = "
@@ -769,134 +870,113 @@ a.wa-shop-btn:active {
       border-radius: 16px;
       padding: 18px;
       box-shadow: 0 10px 28px rgba(0,0,0,0.25);
-      max-width: 760px;
+      max-width: 960px;
     ",
         selectInput(
           "season_select",
           "Select Season",
           choices = sort(unique(data_rds$race_calendar$season[!is.na(data_rds$race_calendar$season)]), decreasing = TRUE)
         ),
-        br(),
+        tags$p("Click a race to view its analysis.",
+               style = "color: rgba(232,237,246,0.55); font-size: 13px; margin-bottom: 10px;"),
         DTOutput("season_table")
       )
     ),
     tabPanel(
-      "Races",
+      "Race Analysis",
       br(),
-      sidebarLayout(
-        sidebarPanel(
-          uiOutput("helm_selector"),
-          uiOutput("race_selector"),
-          checkboxInput(
-            "use_race_filter",
-            "Filter by selected races",
-            value = TRUE
-          )
-        ),
-        mainPanel(
-          leafletOutput("map", height = 450),
-          br(),
-          h4("Boat Speed (knots, SOG & STW)"),
-          plotOutput("plot_boat_speed", height = 220),
-          hr(),
-          h4("Polar Tables"),
-          tabsetPanel(
-            tabPanel("Observed STW Polars",   DTOutput("polar_table_stw")),
-            tabPanel("Observed SOG Polars",   DTOutput("polar_table_sog")),
-            tabPanel("Reference Polars",      DTOutput("polar_table_ref")),
-            tabPanel("STW Polar Performance", DTOutput("polar_table_perf_stw")),
-            tabPanel("SOG Polar Performance", DTOutput("polar_table_perf_sog"))
-          )
-        )
+      uiOutput("selected_race_header"),
+      DTOutput("race_analysis_summary"),
+      br(),
+      leafletOutput("map", height = 450),
+      br(),
+      h4("Boat Speed (knots, SOG & STW)"),
+      plotOutput("plot_boat_speed", height = 220),
+      hr(),
+      h4("Polar Tables"),
+      tabsetPanel(
+        tabPanel("Observed STW Polars",   DTOutput("polar_table_stw")),
+        tabPanel("Observed SOG Polars",   DTOutput("polar_table_sog")),
+        tabPanel("Reference Polars",      DTOutput("polar_table_ref")),
+        tabPanel("STW Polar Performance", DTOutput("polar_table_perf_stw")),
+        tabPanel("SOG Polar Performance", DTOutput("polar_table_perf_sog"))
       )
     ),
     tabPanel(
       "Social",
       br(),
+      
+      # ==================== SPOTIFY ====================
       div(
-        style = "
-      background: rgba(255,255,255,0.04);
-      border: 1px solid rgba(255,255,255,0.10);
-      border-radius: 16px;
-      padding: 18px;
-      box-shadow: 0 10px 28px rgba(0,0,0,0.25);
-      max-width: 760px;
-    ",
-        # ======================
-        # MUSIC SECTION
-        # ======================
-        h4("Music on Spotify", style = "margin-top: 0;"),
-        
+        class = "social-section",
         div(
-          style = "display:flex; flex-wrap:wrap; gap:10px;",
-          
-          tags$a(
-            href   = "https://open.spotify.com/artist/5dL0qEjHF2Ql499KZ2kwLl",
-            target = "_blank",
-            style  = "
-          display:inline-block;
-          padding:10px 14px;
-          border-radius:12px;
-          border:1px solid rgba(255,255,255,0.16);
-          background: rgba(255,255,255,0.06);
-          color:#e8edf6;
-          text-decoration:none;
-          font-weight:600;
-        ",
-            "Artist: Wings"
-          ),
-          
-          tags$a(
-            href   = "https://open.spotify.com/track/23qsWYEBrgBHlA4jHSVk7k",
-            target = "_blank",
-            style  = "
-          display:inline-block;
-          padding:10px 14px;
-          border-radius:12px;
-          border:1px solid rgba(255,255,255,0.16);
-          background: rgba(255,255,255,0.06);
-          color:#e8edf6;
-          text-decoration:none;
-          font-weight:600;
-        ",
-            "Song 1: Wings Through the Night"
-          ),
-          
-          tags$a(
-            href   = "https://open.spotify.com/track/1062JzRoBEpNIK1r6PsXq2",
-            target = "_blank",
-            style  = "
-          display:inline-block;
-          padding:10px 14px;
-          border-radius:12px;
-          border:1px solid rgba(255,255,255,0.16);
-          background: rgba(255,255,255,0.06);
-          color:#e8edf6;
-          text-decoration:none;
-          font-weight:600;
-        ",
-            "Song 2: Bone Island Regatta"
-          )
+          class = "social-section-header",
+          HTML('<svg width="28" height="28" viewBox="0 0 24 24" fill="#1DB954"><path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z"/></svg>'),
+          h4("Music on Spotify")
         ),
-        
-        tags$hr(style = "border-color: rgba(255,255,255,0.10); margin: 22px 0;"),
-        
-        # ======================
-        # SWAG SHOP SECTION
-        # ======================
-        h4("Swag Shop"),
-        
+        tags$a(
+          href   = "https://open.spotify.com/artist/5dL0qEjHF2Ql499KZ2kwLl",
+          target = "_blank",
+          class  = "social-artist-link",
+          HTML('<svg width="16" height="16" viewBox="0 0 24 24" fill="#1DB954"><path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z"/></svg>'),
+          "Wings J112 on Spotify"
+        ),
+        div(
+          class = "song-grid",
+          tags$a(href = "https://open.spotify.com/track/23qsWYEBrgBHlA4jHSVk7k",
+                 target = "_blank", class = "social-link",
+                 tags$span(class = "link-num", "1"), "Wings Through the Night"),
+          tags$a(href = "https://open.spotify.com/track/1062JzRoBEpNIK1r6PsXq2",
+                 target = "_blank", class = "social-link",
+                 tags$span(class = "link-num", "2"), "Bone Island Regatta"),
+          tags$a(href = "https://open.spotify.com/track/28RM2e48vyuYdKbVMha7Pm",
+                 target = "_blank", class = "social-link",
+                 tags$span(class = "link-num", "3"), "Fly Me to Mexico"),
+          tags$a(href = "https://open.spotify.com/track/1exg2uXC8Ev9BjURjk3juG",
+                 target = "_blank", class = "social-link",
+                 tags$span(class = "link-num", "4"), "Bring Her Home"),
+          tags$a(href = "https://open.spotify.com/track/1mEr0gBoyo94vLkUaPRIMW",
+                 target = "_blank", class = "social-link",
+                 tags$span(class = "link-num", "5"), "Tearin' Through The Line")
+        )
+      ),
+      
+      # ==================== YOUTUBE ====================
+      div(
+        class = "social-section",
+        div(
+          class = "social-section-header",
+          HTML('<svg width="32" height="23" viewBox="0 0 159 110" fill="none"><path d="M154 17.5c-1.8-6.7-7.1-12-13.8-13.8C128 0 79.5 0 79.5 0S31 0 18.8 3.7C12.1 5.5 6.8 10.8 5 17.5 1.2 29.7 1.2 55 1.2 55s0 25.3 3.8 37.5c1.8 6.7 7.1 12 13.8 13.8C31 110 79.5 110 79.5 110s48.5 0 60.7-3.7c6.7-1.8 12-7.1 13.8-13.8 3.8-12.2 3.8-37.5 3.8-37.5s0-25.3-3.8-37.5z" fill="#FF0000"/><path d="M64 78.8V31.2L105 55 64 78.8z" fill="#FFF"/></svg>'),
+          h4("Videos on YouTube")
+        ),
+        tags$a(
+          href   = "YOUTUBE_URL_PLACEHOLDER",
+          target = "_blank",
+          class  = "social-yt-link",
+          HTML('<svg width="18" height="13" viewBox="0 0 159 110" fill="none"><path d="M154 17.5c-1.8-6.7-7.1-12-13.8-13.8C128 0 79.5 0 79.5 0S31 0 18.8 3.7C12.1 5.5 6.8 10.8 5 17.5 1.2 29.7 1.2 55 1.2 55s0 25.3 3.8 37.5c1.8 6.7 7.1 12 13.8 13.8C31 110 79.5 110 79.5 110s48.5 0 60.7-3.7c6.7-1.8 12-7.1 13.8-13.8 3.8-12.2 3.8-37.5 3.8-37.5s0-25.3-3.8-37.5z" fill="#FF0000"/><path d="M64 78.8V31.2L105 55 64 78.8z" fill="#FFF"/></svg>'),
+          "Wings Mexico 2026"
+        )
+      ),
+      
+      # ==================== SWAG SHOP ====================
+      div(
+        class = "social-section",
+        div(
+          class = "social-section-header",
+          HTML('<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#e8edf6" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 01-8 0"/></svg>'),
+          h4("Swag Shop")
+        ),
         tags$p(
           "Official Wings merchandise.",
-          style = "color: rgba(232,237,246,0.75); margin-bottom: 14px;"
+          style = "color: rgba(232,237,246,0.60); font-size: 14px; margin-bottom: 14px;"
         ),
-        
         tags$a(
           href   = "https://direct.distrokid.com/wingsj112/home",
           target = "_blank",
           class  = "wa-shop-btn",
           "Visit Swag Shop"
-        )      )
+        )
+      )
     ),
     tabPanel(
       "About",
@@ -953,6 +1033,101 @@ a.wa-shop-btn:active {
 # ---------- SERVER ----------
 server <- function(input, output, session) {
   
+  # Store the race selected from the season table
+  selected_race <- reactiveValues(race = NULL, race_date = NULL, start = NULL, end = NULL)
+  
+  # When a row is clicked in the season table, navigate to Race Analysis
+
+  observeEvent(input$season_table_rows_selected, {
+    row_idx <- input$season_table_rows_selected
+    sr <- season_races()
+    # Ignore clicks on the TOTAL footer row (row_idx > data rows)
+    if (is.null(row_idx) || row_idx > nrow(sr)) return()
+    
+    selected_race$race      <- sr$race[row_idx]
+    selected_race$race_date <- sr$race_date[row_idx]
+    selected_race$start     <- sr$start[row_idx]
+    selected_race$end       <- sr$end[row_idx]
+    updateTabsetPanel(session, "main_tabs", selected = "Race Analysis")
+  })
+  
+  # Header for Race Analysis tab showing the selected race
+  output$selected_race_header <- renderUI({
+    if (is.null(selected_race$race)) {
+      return(h4("Select a race from the Race Seasons tab.", style = "color: rgba(232,237,246,0.65);"))
+    }
+    h4(paste0(selected_race$race, " — ", format(selected_race$race_date, "%m/%d/%Y")))
+  })
+  
+  # Race Analysis summary table
+  output$race_analysis_summary <- renderDT({
+    req(selected_race$race)
+    df <- track()
+    sr <- season_races()
+    
+    # Look up calendar metadata for this race
+    cal_row <- sr %>%
+      filter(race == selected_race$race, race_date == selected_race$race_date) %>%
+      slice(1)
+    
+    race_name     <- selected_race$race
+    race_date_fmt <- format(selected_race$race_date, "%m/%d/%Y")
+    distance      <- if (nrow(cal_row) > 0 && !is.na(cal_row$length)) cal_row$length else NA_real_
+    place_fleet   <- if (nrow(cal_row) > 0 && !is.na(cal_row$place) && !is.na(cal_row$fleet)) {
+      paste0(cal_row$place, " / ", as.integer(cal_row$fleet))
+    } else if (nrow(cal_row) > 0 && !is.na(cal_row$place)) {
+      as.character(cal_row$place)
+    } else {
+      NA_character_
+    }
+    
+    if (nrow(df) == 0) {
+      summary_df <- tibble(
+        Race = race_name, Date = race_date_fmt,
+        `Distance (nm)` = distance, `Place / Fleet` = place_fleet,
+        `Elapsed Time` = NA_character_,
+        `Avg STW` = NA_real_, `Avg SOG` = NA_real_,
+        `Max STW` = NA_real_, `Max SOG` = NA_real_,
+        `Avg TWS` = NA_real_, `Max TWS` = NA_real_,
+        `STW Polar Perf` = NA_real_, `SOG Polar Perf` = NA_real_
+      )
+    } else {
+      t_start <- min(df$datetime_local, na.rm = TRUE)
+      t_end   <- max(df$datetime_local, na.rm = TRUE)
+      elapsed_secs <- as.numeric(difftime(t_end, t_start, units = "secs"))
+      hrs <- floor(elapsed_secs / 3600)
+      mins <- floor((elapsed_secs %% 3600) / 60)
+      secs <- round(elapsed_secs %% 60)
+      elapsed_fmt <- sprintf("%dh %02dm %02ds", hrs, mins, secs)
+      
+      summary_df <- tibble(
+        Race             = race_name,
+        Date             = race_date_fmt,
+        `Distance (nm)`  = distance,
+        `Place / Fleet`  = place_fleet,
+        `Elapsed Time`   = elapsed_fmt,
+        `Avg STW`        = round(mean(df$stw_knots, na.rm = TRUE), 2),
+        `Avg SOG`        = round(mean(df$sog_knots, na.rm = TRUE), 2),
+        `Max STW`        = round(max(df$stw_knots, na.rm = TRUE), 2),
+        `Max SOG`        = round(max(df$sog_knots, na.rm = TRUE), 2),
+        `Avg TWS`        = round(mean(df$tws_knots, na.rm = TRUE), 2),
+        `Max TWS`        = round(max(df$tws_knots, na.rm = TRUE), 2),
+        `STW Polar Perf` = round(mean(df$Polar_Perf_STW, na.rm = TRUE), 2),
+        `SOG Polar Perf` = round(mean(df$Polar_Perf_SOG, na.rm = TRUE), 2)
+      )
+    }
+    
+    # Replace NaN with NA for display
+    summary_df <- summary_df %>%
+      mutate(across(where(is.numeric), ~ ifelse(is.nan(.), NA_real_, .)))
+    
+    datatable(
+      summary_df,
+      options = list(dom = "t", ordering = FALSE, scrollX = TRUE),
+      rownames = FALSE
+    )
+  })
+  
   track_all <- reactive({
     df <- data_rds$track_all
     validate(need(nrow(df) > 0, "No track data in RDS file."))
@@ -965,39 +1140,46 @@ server <- function(input, output, session) {
       )
   })
   
-  output$season_table <- renderDT({
+  # Reactive: season table rows (without TOTAL footer) for shared access
+
+  season_races <- reactive({
     req(input$season_select)
-    
-    # Filter calendar by season column
     cal <- data_rds$race_calendar %>%
       filter(!is.na(season), season == input$season_select)
+    if (nrow(cal) == 0) return(tibble())
     
-    if (nrow(cal) == 0) {
-      return(datatable(tibble::tibble(Message = "No races found for this season.")))
-    }
-    
-    # Deduplicate to one row per race (multiple helm segments share the same race)
-    cal_summary <- cal %>%
-      group_by(race) %>%
+    cal %>%
+      mutate(race_date = as.Date(start)) %>%
+      group_by(race, race_date) %>%
       summarise(
+        series = first(series),
         place  = first(place),
         fleet  = first(fleet),
         length = first(length),
         start  = min(start, na.rm = TRUE),
         end    = max(end, na.rm = TRUE),
         .groups = "drop"
-      )
-    
-    # Duration (hours)
-    cal_summary <- cal_summary %>%
+      ) %>%
+      arrange(start) %>%
       mutate(
         duration_hrs = as.numeric(difftime(end, start, units = "hours")),
         duration_hrs = ifelse(!is.na(duration_hrs) & duration_hrs == 0, NA_real_, duration_hrs),
         duration_hrs = round(duration_hrs, 2)
       )
+  })
+  
+  output$season_table <- renderDT({
+    cal_summary <- season_races()
+    
+    if (nrow(cal_summary) == 0) {
+      return(datatable(tibble::tibble(Message = "No races found for this season.")))
+    }
     
     res <- cal_summary %>%
       transmute(
+        `#`          = row_number(),
+        Date         = format(as.Date(start), "%m/%d/%Y"),
+        Series       = ifelse(is.na(series) | series == "", "", series),
         Race         = race,
         Place        = ifelse(is.na(place) | place == "", "", place),
         Fleet        = ifelse(is.na(fleet), "n/a", as.character(as.integer(fleet))),
@@ -1007,6 +1189,9 @@ server <- function(input, output, session) {
     
     # Footer row with totals
     footer_row <- tibble::tibble(
+      `#`          = NA_integer_,
+      Date         = "",
+      Series       = "",
       Race         = "TOTAL",
       Place        = "",
       Fleet        = "",
@@ -1015,51 +1200,33 @@ server <- function(input, output, session) {
     )
     res <- bind_rows(res, footer_row)
     
-    # Replace NA with blank for display
     res <- res %>%
       mutate(
+        `#`          = ifelse(is.na(`#`), "", as.character(`#`)),
         Length       = ifelse(is.na(Length), "", as.character(Length)),
         Duration_Hrs = ifelse(is.na(Duration_Hrs), "", as.character(Duration_Hrs))
       )
     
     datatable(
       res,
+      selection = "single",
       options = list(dom = 't', pageLength = 100),
       rownames = FALSE
     )
   })
   
-  output$race_selector <- renderUI({
-    df <- track_all()
-    races <- sort(unique(df$race_ui[df$race_ui != "(blank)"]))
-    if (length(races) > 0) {
-      checkboxGroupInput(
-        "race_filter",
-        "Select races to display",
-        choices  = races,
-        selected = races[1]
-      )
-    } else {
-      helpText("No race segments matched datetime_local from Race Calendar.xlsx.")
-    }
-  })
-  
-  # NOTE: date selector removed; this reactive now depends only on race + helm filters.
+
+  # Filter track data to the race selected from the season table
+  # Uses the full start/end time window to capture all days of multiday races
   track <- reactive({
+    req(selected_race$race, selected_race$start, selected_race$end)
     df <- track_all()
-    
-    if (isTRUE(input$use_race_filter) &&
-        !is.null(input$race_filter) &&
-        length(input$race_filter) > 0) {
-      df <- df %>% filter(race %in% input$race_filter)
-    }
-    
-    if (!is.null(input$helm_filter)) {
-      if (length(input$helm_filter) == 0) return(df[0, ])
-      df <- df %>% filter(helm_ui %in% input$helm_filter)
-    }
-    
-    df
+    df %>%
+      filter(
+        race == selected_race$race,
+        datetime_local >= selected_race$start,
+        datetime_local <= selected_race$end
+      )
   })
   
   # MAP
@@ -1486,13 +1653,14 @@ server <- function(input, output, session) {
     cal      <- data_rds$race_calendar
     
     # ---- Completed races from tracks ----
+    # Group by race + day so same-named races on different dates stay separate
     completed <- df_track %>%
       filter(!is.na(race), nzchar(race)) %>%
-      group_by(race) %>%
+      mutate(race_start_date = as.Date(datetime_local)) %>%
+      group_by(race, race_start_date) %>%
       summarise(
         start_time = min(datetime_local, na.rm = TRUE),
         end_time   = max(datetime_local, na.rm = TRUE),
-        race_start_date = as.Date(start_time),
         race_duration_hours = as.numeric(difftime(end_time, start_time, units = "hours")),
         STW_Polar_Performance = mean(Polar_Perf_STW, na.rm = TRUE),
         SOG_Polar_Performance = mean(Polar_Perf_SOG, na.rm = TRUE),
@@ -1522,21 +1690,23 @@ server <- function(input, output, session) {
         Place = if ("place" %in% names(cal)) as.character(place) else NA_character_
       ) %>%
       filter(!is.na(race), nzchar(race), !is.na(start_time)) %>%
-      group_by(race) %>%
+      group_by(race, race_start_date) %>%
       summarise(
         start_time = min(start_time, na.rm = TRUE),
         end_time   = max(end_time,   na.rm = TRUE),
-        race_start_date = as.Date(min(start_time, na.rm = TRUE)),
-        # keep the first non-blank place (or NA if none)
         Place = dplyr::first(na.omit(Place)),
-        cal_duration_hours = as.numeric(difftime(end_time, start_time, units = "hours")),
+        cal_duration_hours = as.numeric(difftime(
+          max(end_time, na.rm = TRUE),
+          min(start_time, na.rm = TRUE),
+          units = "hours"
+        )),
         .groups = "drop"
       )
     
     # Overlay completed stats onto calendar.
     # Calendar rows remain even when there's no track match.
     out <- cal_master %>%
-      left_join(completed, by = "race", suffix = c("_cal", "")) %>%
+      left_join(completed, by = c("race", "race_start_date"), suffix = c("_cal", "")) %>%
       mutate(
         # If completed exists, keep completed’s times/duration; else use calendar times/duration
         start_time = dplyr::coalesce(start_time, start_time_cal),

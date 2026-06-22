@@ -5,7 +5,7 @@ account: dmdanielson
 server: shinyapps.io
 hostUrl: https://api.shinyapps.io/v1
 appId: 16191157
-bundleId: 12156396
+bundleId: 12159722
 url: https://dmdanielson.shinyapps.io/Wings_Analytics/
 version: 1
 asMultiple: FALSE
