@@ -1218,18 +1218,25 @@ a.social-yt-link:hover {
       box-shadow: 0 10px 28px rgba(0,0,0,0.25);
       max-width: 960px;
     ",
-        selectInput(
-          "season_select",
-          "Select Season",
-          choices = sort(unique(data_rds$race_calendar$season[!is.na(data_rds$race_calendar$season)]), decreasing = TRUE)
+        fluidRow(
+          column(4, selectInput(
+            "season_select",
+            "Select Season",
+            choices = c("All", sort(unique(data_rds$race_calendar$season[!is.na(data_rds$race_calendar$season)]), decreasing = TRUE))
+          )),
+          column(4, selectInput(
+            "season_series_select",
+            "Race Series",
+            choices = c("All")
+          ))
         ),
-        tags$p("Click a race to view its analysis.",
-               style = "color: rgba(232,237,246,0.55); font-size: 13px; margin-bottom: 10px;"),
+        DTOutput("season_summary_table"),
+        br(),
         DTOutput("season_table")
       )
     ),
     tabPanel(
-      "Race Analysis",
+      "Race Analytics",
       br(),
       div(
         style = "
@@ -1246,11 +1253,18 @@ a.social-yt-link:hover {
             "ra_season_select", "Season",
             choices = sort(unique(data_rds$race_calendar$season[!is.na(data_rds$race_calendar$season)]), decreasing = TRUE)
           )),
-          column(8, selectInput(
+          column(4, selectInput(
+            "ra_series_select", "Race Series",
+            choices = NULL
+          )),
+          column(4, selectInput(
             "ra_race_select", "Race",
             choices = NULL
           ))
-        )
+        ),
+        actionButton("btn_provide_analytics", "Provide Analytics",
+                     class = "wa-rebuild-btn",
+                     style = "margin-top: 4px; margin-bottom: 8px;")
       ),
       uiOutput("selected_race_header"),
       DTOutput("race_analysis_summary"),
@@ -1391,19 +1405,9 @@ a.social-yt-link:hover {
           "Manage the data files used by Wings Analytics. These operations are only available when running locally.",
           style = "color: rgba(232,237,246,0.65); font-size: 13px; margin-bottom: 16px;"
         ),
-        tags$h5("Track Data", style = "margin-bottom: 4px;"),
-        div(class = "file-path-display", rds_path),
-        actionButton("btn_delete_rds", "Delete track_data.rds",
-                     class = "wa-danger-btn"),
-        uiOutput("rds_status_msg"),
-        tags$hr(style = "border-color: rgba(255,255,255,0.08); margin: 18px 0;"),
-        tags$h5("Race Narratives", style = "margin-bottom: 4px;"),
-        div(class = "file-path-display", narratives_path),
-        actionButton("btn_rebuild_narratives", "Rebuild Race Narratives",
-                     class = "wa-rebuild-btn"),
-        actionButton("btn_delete_narratives", "Delete Narratives File",
-                     class = "wa-danger-btn"),
-        uiOutput("narratives_status_msg")
+        passwordInput("file_mgmt_password", "Enter password to unlock:",
+                      placeholder = "Password"),
+        uiOutput("file_mgmt_controls")
       )
     )
   ),
@@ -1424,7 +1428,7 @@ a.social-yt-link:hover {
 # ---------- SERVER ----------
 server <- function(input, output, session) {
   
-  # Reactive: races available for the selected season on the Race Analysis tab
+  # Reactive: all races for the selected season on the Race Analytics tab
   ra_season_races <- reactive({
     req(input$ra_season_select)
     cal <- data_rds$race_calendar |>
@@ -1446,56 +1450,46 @@ server <- function(input, output, session) {
       arrange(start)
   })
   
+  # Update series dropdown when season changes
+  observeEvent(input$ra_season_select, {
+    sr <- ra_season_races()
+    series_choices <- sort(unique(sr$series[!is.na(sr$series) & nzchar(sr$series)]))
+    updateSelectInput(session, "ra_series_select", choices = series_choices)
+  })
+  
+  # Reactive: races filtered to selected series
+
+  ra_series_races <- reactive({
+    sr <- ra_season_races()
+    req(input$ra_series_select)
+    sr |> filter(!is.na(series), series == input$ra_series_select)
+  })
+  
   # Build race dropdown labels like "Race Name (MM/DD/YYYY)"
   ra_race_choices <- reactive({
-    sr <- ra_season_races()
+    sr <- ra_series_races()
     if (nrow(sr) == 0) return(character())
     labels <- paste0(sr$race, " (", format(sr$race_date, "%m/%d/%Y"), ")")
     setNames(seq_len(nrow(sr)), labels)
   })
   
-  # Update race dropdown when season changes
-  observeEvent(input$ra_season_select, {
+  # Update race dropdown when series changes
+  observeEvent(input$ra_series_select, {
     choices <- ra_race_choices()
     updateSelectInput(session, "ra_race_select", choices = choices)
   })
   
-  # Resolve the currently selected race row from the Race Analysis dropdowns
-  ra_selected_row <- reactive({
-    sr <- ra_season_races()
-    idx <- as.integer(input$ra_race_select)
-    req(idx, cancelOutput = TRUE)
-    if (is.na(idx) || idx < 1 || idx > nrow(sr)) return(NULL)
-    sr[idx, ]
-  })
+  # Track which race row to display (only updates on button click)
+  ra_selected_row <- reactiveVal(NULL)
   
-  # When a row is clicked in the season table, sync the RA dropdowns and navigate
-  observeEvent(input$season_table_rows_selected, {
-    row_idx <- input$season_table_rows_selected
-    sr <- season_races()
-    if (is.null(row_idx) || row_idx > nrow(sr)) return()
-    
-    clicked_season <- input$season_select
-    clicked_race   <- sr$race[row_idx]
-    clicked_date   <- sr$race_date[row_idx]
-    
-    # Sync season dropdown (this triggers ra_season_races update)
-    updateSelectInput(session, "ra_season_select", selected = clicked_season)
-    
-    # After season updates, find matching race index and select it
-    # Use a delayed observer so the race choices are rebuilt first
-    observe({
-      ra_sr <- ra_season_races()
-      req(nrow(ra_sr) > 0)
-      match_idx <- which(ra_sr$race == clicked_race & ra_sr$race_date == clicked_date)
-      if (length(match_idx) > 0) {
-        choices <- ra_race_choices()
-        updateSelectInput(session, "ra_race_select", choices = choices, selected = match_idx[1])
-      }
-      # Self-destroy after running once
-    }) |> bindEvent(ra_season_races(), once = TRUE)
-    
-    updateTabsetPanel(session, "main_tabs", selected = "Race Analysis")
+  observeEvent(input$btn_provide_analytics, {
+    sr <- ra_series_races()
+    idx <- as.integer(input$ra_race_select)
+    if (is.na(idx) || idx < 1 || idx > nrow(sr)) {
+      ra_selected_row(NULL)
+    } else {
+      ra_selected_row(sr[idx, ])
+    }
   })
   
   # Header for Race Analysis tab showing the selected race
@@ -1615,17 +1609,40 @@ server <- function(input, output, session) {
       )
   })
   
-  # Reactive: season table rows (without TOTAL footer) for shared access
-
+  # Update series dropdown when season changes
+  observeEvent(input$season_select, {
+    req(input$season_select)
+    cal <- data_rds$race_calendar
+    if (input$season_select != "All") {
+      cal <- cal |> filter(!is.na(season), season == input$season_select)
+    }
+    series_vals <- sort(unique(cal$series[!is.na(cal$series) & nzchar(cal$series)]))
+    updateSelectInput(session, "season_series_select",
+                      choices = c("All", series_vals))
+  })
+  
+  # Reactive: season table rows filtered by season + series
   season_races <- reactive({
     req(input$season_select)
-    cal <- data_rds$race_calendar %>%
-      filter(!is.na(season), season == input$season_select)
+    cal <- data_rds$race_calendar |>
+      filter(!is.na(season))
+    
+    if (input$season_select != "All") {
+      cal <- cal |> filter(season == input$season_select)
+    }
+    if (isTruthy(input$season_series_select) && input$season_series_select != "All") {
+      cal <- cal |> filter(!is.na(series), series == input$season_series_select)
+    }
     if (nrow(cal) == 0) return(tibble())
     
-    cal %>%
-      mutate(race_date = as.Date(start)) %>%
-      group_by(race, race_date) %>%
+    # Build a set of race names that have NMEA track data
+    track_races <- data_rds$track_all |>
+      filter(!is.na(race), nzchar(race)) |>
+      distinct(race)
+    
+    cal |>
+      mutate(race_date = as.Date(start)) |>
+      group_by(race, race_date) |>
       summarise(
         series = first(series),
         place  = first(place),
@@ -1634,23 +1651,49 @@ server <- function(input, output, session) {
         start  = min(start, na.rm = TRUE),
         end    = max(end, na.rm = TRUE),
         .groups = "drop"
-      ) %>%
-      arrange(start) %>%
+      ) |>
+      arrange(start) |>
       mutate(
         duration_hrs = as.numeric(difftime(end, start, units = "hours")),
         duration_hrs = ifelse(!is.na(duration_hrs) & duration_hrs == 0, NA_real_, duration_hrs),
-        duration_hrs = round(duration_hrs, 2)
+        duration_hrs = round(duration_hrs, 2),
+        has_nmea = race %in% track_races$race
       )
+  })
+  
+  # Summary row displayed above the race list
+  output$season_summary_table <- renderDT({
+    cal_summary <- season_races()
+    if (nrow(cal_summary) == 0) {
+      return(datatable(tibble::tibble(Message = "No races found."),
+                       options = list(dom = "t"), rownames = FALSE))
+    }
+    
+    place_num <- suppressWarnings(as.numeric(cal_summary$place))
+    fleet_num <- suppressWarnings(as.numeric(cal_summary$fleet))
+    
+    summary_df <- tibble::tibble(
+      `# Races`       = nrow(cal_summary),
+      `Avg Place`     = if (all(is.na(place_num))) NA_real_ else round(mean(place_num, na.rm = TRUE), 1),
+      `Avg Fleet`     = if (all(is.na(fleet_num))) NA_real_ else round(mean(fleet_num, na.rm = TRUE), 1),
+      `Total Length`  = round(sum(cal_summary$length, na.rm = TRUE), 1),
+      `Total Duration (hrs)` = round(sum(cal_summary$duration_hrs, na.rm = TRUE), 2),
+      `Races w/ NMEA` = sum(cal_summary$has_nmea)
+    )
+    
+    datatable(summary_df,
+              options = list(dom = "t", ordering = FALSE),
+              rownames = FALSE)
   })
   
   output$season_table <- renderDT({
     cal_summary <- season_races()
     
     if (nrow(cal_summary) == 0) {
-      return(datatable(tibble::tibble(Message = "No races found for this season.")))
+      return(datatable(tibble::tibble(Message = "No races found for this selection.")))
     }
     
-    res <- cal_summary %>%
+    res <- cal_summary |>
       transmute(
         `#`          = row_number(),
         Date         = format(as.Date(start), "%m/%d/%Y"),
@@ -1658,33 +1701,14 @@ server <- function(input, output, session) {
         Race         = race,
         Place        = ifelse(is.na(place) | place == "", "", place),
         Fleet        = ifelse(is.na(fleet), "n/a", as.character(as.integer(fleet))),
-        Length       = ifelse(is.na(length), NA_real_, length),
-        Duration_Hrs = duration_hrs
-      )
-    
-    # Footer row with totals
-    footer_row <- tibble::tibble(
-      `#`          = NA_integer_,
-      Date         = "",
-      Series       = "",
-      Race         = "TOTAL",
-      Place        = "",
-      Fleet        = "",
-      Length       = round(sum(res$Length, na.rm = TRUE), 1),
-      Duration_Hrs = round(sum(res$Duration_Hrs, na.rm = TRUE), 2)
-    )
-    res <- bind_rows(res, footer_row)
-    
-    res <- res %>%
-      mutate(
-        `#`          = ifelse(is.na(`#`), "", as.character(`#`)),
-        Length       = ifelse(is.na(Length), "", as.character(Length)),
-        Duration_Hrs = ifelse(is.na(Duration_Hrs), "", as.character(Duration_Hrs))
+        Length       = ifelse(is.na(length), "", as.character(length)),
+        Duration_Hrs = ifelse(is.na(duration_hrs), "", as.character(duration_hrs)),
+        `NMEA Data`  = ifelse(has_nmea, "\u2705", "\u274c")
       )
     
     datatable(
       res,
-      selection = "single",
+      selection = "none",
       options = list(dom = 't', pageLength = 100),
       rownames = FALSE
     )
@@ -2254,6 +2278,32 @@ server <- function(input, output, session) {
         ),
         digits = 2
       )
+  })
+  
+  # ---- FILE MANAGEMENT PASSWORD GATE ----
+  FILE_MGMT_PASSWORD <- "wings"
+  
+  output$file_mgmt_controls <- renderUI({
+    if (!isTruthy(input$file_mgmt_password) ||
+        input$file_mgmt_password != FILE_MGMT_PASSWORD) {
+      return(tags$p("Enter the correct password to access file management controls.",
+                    style = "color: rgba(232,237,246,0.45); font-size: 13px;"))
+    }
+    tagList(
+      tags$h5("Track Data", style = "margin-bottom: 4px;"),
+      div(class = "file-path-display", rds_path),
+      actionButton("btn_delete_rds", "Delete track_data.rds",
+                   class = "wa-danger-btn"),
+      uiOutput("rds_status_msg"),
+      tags$hr(style = "border-color: rgba(255,255,255,0.08); margin: 18px 0;"),
+      tags$h5("Race Narratives", style = "margin-bottom: 4px;"),
+      div(class = "file-path-display", narratives_path),
+      actionButton("btn_rebuild_narratives", "Rebuild Race Narratives",
+                   class = "wa-rebuild-btn"),
+      actionButton("btn_delete_narratives", "Delete Narratives File",
+                   class = "wa-danger-btn"),
+      uiOutput("narratives_status_msg")
+    )
   })
   
   # ---- FILE MANAGEMENT BUTTON HANDLERS ----
