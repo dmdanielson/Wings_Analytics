@@ -43,6 +43,7 @@ data_dir <- if (dir.exists(data_dir_local)) data_dir_local else app_dir
 if (dir.exists(app_dir_local)) setwd(app_dir_local)
 
 rds_path           <- file.path(app_dir, "track_data.rds")
+narratives_path    <- file.path(app_dir, "race_narratives.rds")
 race_calendar_path <- file.path(data_dir, "Race Calendar.xlsx")
 polar_path         <- file.path(data_dir, "Polars.xlsx")
 
@@ -259,6 +260,250 @@ normalize_excel_names <- function(nms) {
   nms <- tolower(gsub("\\s+", "_", nms))
   nms <- gsub("[^a-z0-9_]+", "", nms)
   nms
+}
+
+# ---------- RACE NARRATIVE GENERATOR ----------
+generate_race_narrative <- function(race_row, completed_races) {
+  race_name <- race_row$race
+  race_date <- format(race_row$race_date, "%B %d, %Y")
+  has_data  <- !is.na(race_row$avg_sog) && !is.nan(race_row$avg_sog)
+
+  if (!has_data) {
+    opts <- c(
+      paste0("No track data is available for ", race_name, " (",
+             race_date, "). The GPS apparently took the day off \u2014 even electronics need a mental health day now and then."),
+      paste0("Track data for ", race_name, " (", race_date,
+             ") is conspicuously absent. Whether the instruments were napping or the data was lost to the digital abyss, we may never know."),
+      paste0("Alas, no track data exists for ", race_name, " (", race_date,
+             "). The sailing happened, but the electrons that were supposed to record it clearly had other plans.")
+    )
+    idx <- (sum(utf8ToInt(paste0(race_name, race_date))) %% length(opts)) + 1
+    return(opts[idx])
+  }
+
+  n_completed <- nrow(completed_races)
+  paragraphs  <- character()
+
+  # ---- Paragraph 1: Overview, distance, placement ----
+  p1_parts <- character()
+
+  # Distance
+  if (!is.na(race_row$length)) {
+    all_len <- completed_races$length[!is.na(completed_races$length)]
+    if (length(all_len) > 2) {
+      pct <- mean(race_row$length >= all_len)
+      d <- if (pct < 0.25) "one of the shorter courses in the fleet\u2019s repertoire"
+           else if (pct < 0.50) "a moderate-length affair"
+           else if (pct < 0.75) "a respectably lengthy course"
+           else "one of the longest courses Wings has tackled"
+      p1_parts <- c(p1_parts, paste0("At ", race_row$length,
+                                     " nautical miles, this was ", d, "."))
+    } else {
+      p1_parts <- c(p1_parts, paste0("The course covered ",
+                                     race_row$length, " nautical miles."))
+    }
+  }
+
+  # Duration
+  if (!is.na(race_row$duration_hrs) && race_row$duration_hrs > 0) {
+    hrs  <- floor(race_row$duration_hrs)
+    mins <- round((race_row$duration_hrs - hrs) * 60)
+    dur  <- if (hrs > 0) paste0(hrs, "h ", mins, "m") else paste0(mins, "m")
+    p1_parts <- c(p1_parts, paste0("Wings was on the course for ", dur, "."))
+  }
+
+  # Placement
+  if (!is.na(race_row$place) && !is.na(race_row$fleet)) {
+    place_num <- suppressWarnings(readr::parse_number(as.character(race_row$place)))
+    fleet_n   <- as.integer(race_row$fleet)
+    if (!is.na(place_num) && !is.na(fleet_n) && fleet_n > 0) {
+      pct_place <- place_num / fleet_n
+      ptxt <- if (place_num == 1) {
+        paste0("Wings claimed the top spot in a fleet of ", fleet_n,
+               " \u2014 the stuff of legends (or at least a good bar story).")
+      } else if (pct_place <= 0.33) {
+        paste0("Finishing ", place_num, " out of ", fleet_n,
+               " boats, Wings put in a strong showing near the front of the pack.")
+      } else if (pct_place <= 0.50) {
+        paste0("A ", place_num, " place finish in a fleet of ", fleet_n,
+               " \u2014 solidly in the top half, which is where the good stories start.")
+      } else if (pct_place <= 0.75) {
+        paste0("Placing ", place_num, " of ", fleet_n,
+               " boats \u2014 not the headline finish they were hoping for, but every race is a learning experience.")
+      } else {
+        paste0("At ", place_num, " of ", fleet_n,
+               ", this was a character-building day. Even the best sailors have races they\u2019d rather not discuss at the yacht club.")
+      }
+      p1_parts <- c(p1_parts, ptxt)
+    } else if (is.na(place_num)) {
+      p1_parts <- c(p1_parts, paste0("Wings finished with a ",
+                                     race_row$place, " in a fleet of ", fleet_n, "."))
+    }
+  }
+
+  if (length(p1_parts) > 0)
+    paragraphs <- c(paragraphs,
+                    paste0(race_name, " on ", race_date, ". ",
+                           paste(p1_parts, collapse = " ")))
+
+  # ---- Paragraph 2: Speed & polar performance ----
+  sp <- character()
+
+  if (!is.na(race_row$avg_sog) && !is.nan(race_row$avg_sog)) {
+    all_sog <- completed_races$avg_sog[!is.na(completed_races$avg_sog) &
+                                        !is.nan(completed_races$avg_sog)]
+    sog_pct <- if (length(all_sog) > 2) mean(race_row$avg_sog >= all_sog) else 0.5
+    desc <- if (sog_pct < 0.20) "on the leisurely end of the spectrum"
+            else if (sog_pct < 0.40) "below the fleet average"
+            else if (sog_pct < 0.60) "right around the fleet average"
+            else if (sog_pct < 0.80) "above average"
+            else "among the fastest outings on record"
+    peak <- if (!is.na(race_row$max_sog))
+              paste0(" with a peak of ", round(race_row$max_sog, 1), " knots")
+            else ""
+    sp <- c(sp, paste0("Average speed over ground came in at ",
+                       round(race_row$avg_sog, 1), " knots", peak,
+                       " \u2014 ", desc, "."))
+  }
+
+  if (!is.na(race_row$avg_stw) && !is.nan(race_row$avg_stw) &&
+      !is.na(race_row$avg_sog) && !is.nan(race_row$avg_sog)) {
+    diff <- round(race_row$avg_sog - race_row$avg_stw, 2)
+    if (abs(diff) > 0.15) {
+      dir <- if (diff > 0) "a favorable current adding" else "current working against the boat to the tune of"
+      sp <- c(sp, paste0("The gap between SOG and STW suggests ", dir, " roughly ",
+                         abs(diff), " knots."))
+    }
+  }
+
+  if (!is.na(race_row$polar_perf_sog) && !is.nan(race_row$polar_perf_sog)) {
+    pp <- round(race_row$polar_perf_sog, 2)
+    ptxt <- if (pp > 0.3) {
+      paste0("Polar performance was +", pp,
+             " knots above target \u2014 Wings was outpacing her own polars, which either means brilliant sailing or the polars need updating (we\u2019ll take the credit).")
+    } else if (pp > 0) {
+      paste0("Polar performance came in at +", pp,
+             " knots, slightly above target. The crew was squeezing out a bit more than the boat\u2019s theoretical speed \u2014 well done.")
+    } else if (pp > -0.3) {
+      paste0("Polar performance was ", pp,
+             " knots, just a whisker below target. Close enough to call it respectable.")
+    } else if (pp > -0.7) {
+      paste0("At ", pp,
+             " knots below polar targets, there\u2019s room for improvement. The boat had more to give \u2014 or the conditions were making it difficult to extract.")
+    } else {
+      paste0("Polar performance of ", pp,
+             " knots below target suggests the conditions (or the crew\u2019s coffee supply) weren\u2019t cooperating.")
+    }
+    sp <- c(sp, ptxt)
+  }
+
+  if (length(sp) > 0) paragraphs <- c(paragraphs, paste(sp, collapse = " "))
+
+  # ---- Paragraph 3: Wind conditions ----
+  wp <- character()
+
+  if (!is.na(race_row$avg_tws) && !is.nan(race_row$avg_tws)) {
+    wd <- if (race_row$avg_tws < 5)
+            "a drifter \u2014 the kind of day where watching paint dry offers comparable excitement"
+          else if (race_row$avg_tws < 8)
+            "light air conditions that demanded patience and finesse"
+          else if (race_row$avg_tws < 12)
+            "moderate and manageable breeze \u2014 solid racing conditions"
+          else if (race_row$avg_tws < 18)
+            "a healthy breeze that kept the crew on their toes"
+          else "heavy air that separated the bold from the cautious"
+
+    gust <- if (!is.na(race_row$max_tws) && !is.nan(race_row$max_tws))
+              paste0(" with gusts to ", round(race_row$max_tws, 1), " knots")
+            else ""
+    wp <- c(wp, paste0("Wind averaged ", round(race_row$avg_tws, 1),
+                       " knots", gust, " \u2014 ", wd, "."))
+
+    all_tws <- completed_races$avg_tws[!is.na(completed_races$avg_tws) &
+                                        !is.nan(completed_races$avg_tws)]
+    if (length(all_tws) > 2) {
+      tws_pct <- mean(race_row$avg_tws >= all_tws)
+      comp <- if (tws_pct < 0.25)
+                "This was one of the lighter-air races in the dataset, making boat handling and sail trim all the more critical."
+              else if (tws_pct > 0.75)
+                "Relative to other races, this was a windy one \u2014 the kind of conditions where reef points earn their keep."
+              else ""
+      if (nzchar(comp)) wp <- c(wp, comp)
+    }
+  }
+
+  if (!is.na(race_row$headsail) && nzchar(race_row$headsail)) {
+    wp <- c(wp, paste0("The crew flew the ", race_row$headsail, " for this one."))
+  }
+
+  if (!is.na(race_row$helm) && nzchar(race_row$helm)) {
+    wp <- c(wp, paste0(race_row$helm, " had the helm."))
+  }
+
+  if (length(wp) > 0) paragraphs <- c(paragraphs, paste(wp, collapse = " "))
+
+  paste(paragraphs, collapse = "\n\n")
+}
+
+build_all_narratives <- function(data_rds) {
+  track <- data_rds$track_all
+  cal   <- data_rds$race_calendar
+
+  # Per-race stats from track data
+  race_stats <- track |>
+    filter(!is.na(race), nzchar(race)) |>
+    mutate(race_date = as.Date(datetime_local)) |>
+    group_by(race, race_date) |>
+    summarise(
+      avg_sog        = mean(sog_knots, na.rm = TRUE),
+      max_sog        = max(sog_knots,  na.rm = TRUE),
+      avg_stw        = mean(stw_knots, na.rm = TRUE),
+      max_stw        = max(stw_knots,  na.rm = TRUE),
+      avg_tws        = mean(tws_knots, na.rm = TRUE),
+      max_tws        = max(tws_knots,  na.rm = TRUE),
+      polar_perf_stw = mean(Polar_Perf_STW, na.rm = TRUE),
+      polar_perf_sog = mean(Polar_Perf_SOG, na.rm = TRUE),
+      duration_hrs   = as.numeric(difftime(
+        max(datetime_local), min(datetime_local), units = "hours")),
+      .groups = "drop"
+    ) |>
+    mutate(across(where(is.numeric), ~ ifelse(is.infinite(.), NA_real_, .)))
+
+  # Calendar info
+  if (nrow(cal) > 0) {
+    cal_info <- cal |>
+      mutate(race_date = as.Date(start)) |>
+      group_by(race, race_date) |>
+      summarise(
+        season   = first(season),
+        series   = first(series),
+        place    = first(place),
+        fleet    = first(fleet),
+        length   = first(length),
+        helm     = first(helm),
+        headsail = first(headsail),
+        .groups  = "drop"
+      )
+    all_races <- cal_info |>
+      full_join(race_stats, by = c("race", "race_date"))
+  } else {
+    all_races <- race_stats |>
+      mutate(season = NA_character_, series = NA_character_,
+             place = NA_character_, fleet = NA_real_,
+             length = NA_real_, helm = NA_character_,
+             headsail = NA_character_)
+  }
+
+  completed <- all_races |>
+    filter(!is.na(avg_sog), !is.nan(avg_sog))
+
+  narratives <- list()
+  for (i in seq_len(nrow(all_races))) {
+    row <- all_races[i, ]
+    key <- paste(row$race, row$race_date, sep = "|")
+    narratives[[key]] <- generate_race_narrative(row, completed)
+  }
+  narratives
 }
 
 # ---------- RDS CREATION (LOCAL ONLY) ----------
@@ -581,8 +826,19 @@ data_rds <- list(
   track_all      = track_all_loaded,
   polar_ref      = polar_ref_loaded,
   polar_ref_long = polar_ref_long_loaded,
-  race_calendar  = race_calendar_loaded   # <-- ADD THIS
+  race_calendar  = race_calendar_loaded
 )
+
+# ---------- BUILD / LOAD RACE NARRATIVES ----------
+if (!file.exists(narratives_path)) {
+  race_narratives_loaded <- build_all_narratives(data_rds)
+  if (ALLOW_REBUILD_RDS) {
+    saveRDS(race_narratives_loaded, narratives_path)
+  }
+} else {
+  race_narratives_loaded <- readRDS(narratives_path)
+}
+
 # ---------- UI ----------
 ui <- fluidPage(
   tags$head(
@@ -844,6 +1100,96 @@ a.social-yt-link:hover {
   border-color: rgba(255,0,0,0.40) !important;
   transform: translateY(-1px) !important;
 }
+
+/* ===== Race Narrative Card ===== */
+.race-narrative {
+  background: linear-gradient(135deg, rgba(255,255,255,0.04), rgba(255,255,255,0.02));
+  border: 1px solid rgba(255,255,255,0.10);
+  border-left: 3px solid rgba(100,180,255,0.35);
+  border-radius: 12px;
+  padding: 22px 26px;
+  margin-bottom: 18px;
+  max-width: 960px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.2);
+}
+.race-narrative-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+  font-size: 16px;
+  font-weight: 600;
+  color: rgba(232,237,246,0.90);
+  letter-spacing: 0.2px;
+}
+.race-narrative-body {
+  font-size: 14.5px;
+  line-height: 1.75;
+  color: rgba(232,237,246,0.80);
+}
+.race-narrative-body p {
+  margin-bottom: 12px;
+}
+.race-narrative-body p:last-child {
+  margin-bottom: 0;
+}
+
+/* ===== File Management Section ===== */
+.file-mgmt-section {
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.10);
+  border-radius: 16px;
+  padding: 22px 24px;
+  box-shadow: 0 10px 28px rgba(0,0,0,0.25);
+  max-width: 760px;
+  margin-top: 18px;
+}
+.file-path-display {
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-size: 12px;
+  color: rgba(232,237,246,0.50);
+  background: rgba(0,0,0,0.25);
+  border-radius: 6px;
+  padding: 6px 10px;
+  margin: 6px 0 14px 0;
+  word-break: break-all;
+}
+.wa-danger-btn {
+  display: inline-block !important;
+  padding: 10px 16px !important;
+  border-radius: 12px !important;
+  background-color: rgba(220,60,60,0.12) !important;
+  border: 1px solid rgba(220,60,60,0.30) !important;
+  color: #e8edf6 !important;
+  text-decoration: none !important;
+  font-weight: 600 !important;
+  cursor: pointer !important;
+  transition: all 0.18s ease-in-out !important;
+  margin-right: 8px !important;
+}
+.wa-danger-btn:hover {
+  background-color: rgba(220,60,60,0.22) !important;
+  border-color: rgba(220,60,60,0.50) !important;
+  box-shadow: 0 6px 16px rgba(0,0,0,0.3) !important;
+}
+.wa-rebuild-btn {
+  display: inline-block !important;
+  padding: 10px 16px !important;
+  border-radius: 12px !important;
+  background-color: rgba(100,180,255,0.10) !important;
+  border: 1px solid rgba(100,180,255,0.25) !important;
+  color: #e8edf6 !important;
+  text-decoration: none !important;
+  font-weight: 600 !important;
+  cursor: pointer !important;
+  transition: all 0.18s ease-in-out !important;
+  margin-right: 8px !important;
+}
+.wa-rebuild-btn:hover {
+  background-color: rgba(100,180,255,0.20) !important;
+  border-color: rgba(100,180,255,0.45) !important;
+  box-shadow: 0 6px 16px rgba(0,0,0,0.3) !important;
+}
 "))
   ),
   
@@ -885,8 +1231,31 @@ a.social-yt-link:hover {
     tabPanel(
       "Race Analysis",
       br(),
+      div(
+        style = "
+          background: rgba(255,255,255,0.04);
+          border: 1px solid rgba(255,255,255,0.10);
+          border-radius: 16px;
+          padding: 18px;
+          box-shadow: 0 10px 28px rgba(0,0,0,0.25);
+          max-width: 960px;
+          margin-bottom: 14px;
+        ",
+        fluidRow(
+          column(4, selectInput(
+            "ra_season_select", "Season",
+            choices = sort(unique(data_rds$race_calendar$season[!is.na(data_rds$race_calendar$season)]), decreasing = TRUE)
+          )),
+          column(8, selectInput(
+            "ra_race_select", "Race",
+            choices = NULL
+          ))
+        )
+      ),
       uiOutput("selected_race_header"),
       DTOutput("race_analysis_summary"),
+      br(),
+      uiOutput("race_narrative_card"),
       br(),
       leafletOutput("map", height = 450),
       br(),
@@ -1013,6 +1382,28 @@ a.social-yt-link:hover {
           class  = "wa-shop-btn",
           "Visit GitHub"
         )
+      ),
+      # ---- File Management ----
+      div(
+        class = "file-mgmt-section",
+        h4("Data File Management"),
+        tags$p(
+          "Manage the data files used by Wings Analytics. These operations are only available when running locally.",
+          style = "color: rgba(232,237,246,0.65); font-size: 13px; margin-bottom: 16px;"
+        ),
+        tags$h5("Track Data", style = "margin-bottom: 4px;"),
+        div(class = "file-path-display", rds_path),
+        actionButton("btn_delete_rds", "Delete track_data.rds",
+                     class = "wa-danger-btn"),
+        uiOutput("rds_status_msg"),
+        tags$hr(style = "border-color: rgba(255,255,255,0.08); margin: 18px 0;"),
+        tags$h5("Race Narratives", style = "margin-bottom: 4px;"),
+        div(class = "file-path-display", narratives_path),
+        actionButton("btn_rebuild_narratives", "Rebuild Race Narratives",
+                     class = "wa-rebuild-btn"),
+        actionButton("btn_delete_narratives", "Delete Narratives File",
+                     class = "wa-danger-btn"),
+        uiOutput("narratives_status_msg")
       )
     )
   ),
@@ -1033,45 +1424,129 @@ a.social-yt-link:hover {
 # ---------- SERVER ----------
 server <- function(input, output, session) {
   
-  # Store the race selected from the season table
-  selected_race <- reactiveValues(race = NULL, race_date = NULL, start = NULL, end = NULL)
+  # Reactive: races available for the selected season on the Race Analysis tab
+  ra_season_races <- reactive({
+    req(input$ra_season_select)
+    cal <- data_rds$race_calendar |>
+      filter(!is.na(season), season == input$ra_season_select)
+    if (nrow(cal) == 0) return(tibble())
+    
+    cal |>
+      mutate(race_date = as.Date(start)) |>
+      group_by(race, race_date) |>
+      summarise(
+        series = first(series),
+        place  = first(place),
+        fleet  = first(fleet),
+        length = first(length),
+        start  = min(start, na.rm = TRUE),
+        end    = max(end, na.rm = TRUE),
+        .groups = "drop"
+      ) |>
+      arrange(start)
+  })
   
-  # When a row is clicked in the season table, navigate to Race Analysis
-
+  # Build race dropdown labels like "Race Name (MM/DD/YYYY)"
+  ra_race_choices <- reactive({
+    sr <- ra_season_races()
+    if (nrow(sr) == 0) return(character())
+    labels <- paste0(sr$race, " (", format(sr$race_date, "%m/%d/%Y"), ")")
+    setNames(seq_len(nrow(sr)), labels)
+  })
+  
+  # Update race dropdown when season changes
+  observeEvent(input$ra_season_select, {
+    choices <- ra_race_choices()
+    updateSelectInput(session, "ra_race_select", choices = choices)
+  })
+  
+  # Resolve the currently selected race row from the Race Analysis dropdowns
+  ra_selected_row <- reactive({
+    sr <- ra_season_races()
+    idx <- as.integer(input$ra_race_select)
+    req(idx, cancelOutput = TRUE)
+    if (is.na(idx) || idx < 1 || idx > nrow(sr)) return(NULL)
+    sr[idx, ]
+  })
+  
+  # When a row is clicked in the season table, sync the RA dropdowns and navigate
   observeEvent(input$season_table_rows_selected, {
     row_idx <- input$season_table_rows_selected
     sr <- season_races()
-    # Ignore clicks on the TOTAL footer row (row_idx > data rows)
     if (is.null(row_idx) || row_idx > nrow(sr)) return()
     
-    selected_race$race      <- sr$race[row_idx]
-    selected_race$race_date <- sr$race_date[row_idx]
-    selected_race$start     <- sr$start[row_idx]
-    selected_race$end       <- sr$end[row_idx]
+    clicked_season <- input$season_select
+    clicked_race   <- sr$race[row_idx]
+    clicked_date   <- sr$race_date[row_idx]
+    
+    # Sync season dropdown (this triggers ra_season_races update)
+    updateSelectInput(session, "ra_season_select", selected = clicked_season)
+    
+    # After season updates, find matching race index and select it
+    # Use a delayed observer so the race choices are rebuilt first
+    observe({
+      ra_sr <- ra_season_races()
+      req(nrow(ra_sr) > 0)
+      match_idx <- which(ra_sr$race == clicked_race & ra_sr$race_date == clicked_date)
+      if (length(match_idx) > 0) {
+        choices <- ra_race_choices()
+        updateSelectInput(session, "ra_race_select", choices = choices, selected = match_idx[1])
+      }
+      # Self-destroy after running once
+    }) |> bindEvent(ra_season_races(), once = TRUE)
+    
     updateTabsetPanel(session, "main_tabs", selected = "Race Analysis")
   })
   
   # Header for Race Analysis tab showing the selected race
   output$selected_race_header <- renderUI({
-    if (is.null(selected_race$race)) {
-      return(h4("Select a race from the Race Seasons tab.", style = "color: rgba(232,237,246,0.65);"))
+    row <- ra_selected_row()
+    if (is.null(row)) {
+      return(h4("Select a season and race above.", style = "color: rgba(232,237,246,0.65);"))
     }
-    h4(paste0(selected_race$race, " — ", format(selected_race$race_date, "%m/%d/%Y")))
+    h4(paste0(row$race, " — ", format(row$race_date, "%m/%d/%Y")))
+  })
+  
+  # Reactive store for narratives (so rebuild button can update them)
+  race_narratives <- reactiveVal(race_narratives_loaded)
+  
+  # Race Narrative Card
+  output$race_narrative_card <- renderUI({
+    row <- ra_selected_row()
+    if (is.null(row)) return(NULL)
+    
+    key  <- paste(row$race, row$race_date, sep = "|")
+    narr <- race_narratives()
+    text <- narr[[key]]
+    
+    if (is.null(text) || !nzchar(text)) {
+      text <- paste0("No narrative is available for ", row$race,
+                     ". Try rebuilding the narratives file from the About tab.")
+    }
+    
+    # Convert double-newlines to <p> tags
+    paras <- strsplit(text, "\n\n", fixed = TRUE)[[1]]
+    body_html <- paste0("<p>", htmltools::htmlEscape(paras), "</p>", collapse = "\n")
+    
+    div(
+      class = "race-narrative",
+      div(
+        class = "race-narrative-title",
+        HTML('<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="rgba(100,180,255,0.7)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>'),
+        "Race Report"
+      ),
+      div(class = "race-narrative-body", HTML(body_html))
+    )
   })
   
   # Race Analysis summary table
   output$race_analysis_summary <- renderDT({
-    req(selected_race$race)
+    cal_row <- ra_selected_row()
+    req(cal_row)
     df <- track()
-    sr <- season_races()
     
-    # Look up calendar metadata for this race
-    cal_row <- sr %>%
-      filter(race == selected_race$race, race_date == selected_race$race_date) %>%
-      slice(1)
-    
-    race_name     <- selected_race$race
-    race_date_fmt <- format(selected_race$race_date, "%m/%d/%Y")
+    race_name     <- cal_row$race
+    race_date_fmt <- format(cal_row$race_date, "%m/%d/%Y")
     distance      <- if (nrow(cal_row) > 0 && !is.na(cal_row$length)) cal_row$length else NA_real_
     place_fleet   <- if (nrow(cal_row) > 0 && !is.na(cal_row$place) && !is.na(cal_row$fleet)) {
       paste0(cal_row$place, " / ", as.integer(cal_row$fleet))
@@ -1216,16 +1691,16 @@ server <- function(input, output, session) {
   })
   
 
-  # Filter track data to the race selected from the season table
-  # Uses the full start/end time window to capture all days of multiday races
+  # Filter track data to the race selected from the Race Analysis dropdowns
   track <- reactive({
-    req(selected_race$race, selected_race$start, selected_race$end)
+    row <- ra_selected_row()
+    req(row)
     df <- track_all()
-    df %>%
+    df |>
       filter(
-        race == selected_race$race,
-        datetime_local >= selected_race$start,
-        datetime_local <= selected_race$end
+        race == row$race,
+        datetime_local >= row$start,
+        datetime_local <= row$end
       )
   })
   
@@ -1779,6 +2254,73 @@ server <- function(input, output, session) {
         ),
         digits = 2
       )
+  })
+  
+  # ---- FILE MANAGEMENT BUTTON HANDLERS ----
+  
+  # Rebuild narratives
+  observeEvent(input$btn_rebuild_narratives, {
+    narr <- build_all_narratives(data_rds)
+    tryCatch({
+      saveRDS(narr, narratives_path)
+      race_narratives(narr)
+      output$narratives_status_msg <- renderUI({
+        tags$p(paste0("Narratives rebuilt successfully (",
+                      length(narr), " races)."),
+               style = "color: rgba(100,200,120,0.85); font-size: 13px; margin-top: 8px;")
+      })
+    }, error = function(e) {
+      output$narratives_status_msg <- renderUI({
+        tags$p(paste0("Error: ", e$message),
+               style = "color: rgba(220,80,80,0.85); font-size: 13px; margin-top: 8px;")
+      })
+    })
+  })
+  
+  # Delete narratives file
+  observeEvent(input$btn_delete_narratives, {
+    if (file.exists(narratives_path)) {
+      tryCatch({
+        file.remove(narratives_path)
+        output$narratives_status_msg <- renderUI({
+          tags$p("Narratives file deleted.",
+                 style = "color: rgba(220,180,80,0.85); font-size: 13px; margin-top: 8px;")
+        })
+      }, error = function(e) {
+        output$narratives_status_msg <- renderUI({
+          tags$p(paste0("Error: ", e$message),
+                 style = "color: rgba(220,80,80,0.85); font-size: 13px; margin-top: 8px;")
+        })
+      })
+    } else {
+      output$narratives_status_msg <- renderUI({
+        tags$p("File does not exist.",
+               style = "color: rgba(232,237,246,0.50); font-size: 13px; margin-top: 8px;")
+      })
+    }
+  })
+  
+  # Delete track_data.rds
+  observeEvent(input$btn_delete_rds, {
+    if (file.exists(rds_path)) {
+      tryCatch({
+        file.remove(rds_path)
+        output$rds_status_msg <- renderUI({
+          tags$p("track_data.rds deleted. Restart the app to rebuild from raw data.",
+                 style = "color: rgba(220,180,80,0.85); font-size: 13px; margin-top: 8px;")
+        })
+      }, error = function(e) {
+        output$rds_status_msg <- renderUI({
+          tags$p(paste0("Error: ", e$message),
+                 style = "color: rgba(220,80,80,0.85); font-size: 13px; margin-top: 8px;")
+        })
+      })
+    } else {
+      output$rds_status_msg <- renderUI({
+        tags$p("File does not exist.",
+               style = "color: rgba(232,237,246,0.50); font-size: 13px; margin-top: 8px;")
+      })
+    }
   })
   }
 
