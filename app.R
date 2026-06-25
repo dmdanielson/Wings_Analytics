@@ -445,54 +445,154 @@ generate_race_narrative <- function(race_row, completed_races) {
   paste(paragraphs, collapse = "\n\n")
 }
 
+# ---------- SEASON NARRATIVE GENERATOR ----------
+generate_season_narrative <- function(season_name, season_cal, track_data) {
+  n_races <- nrow(season_cal)
+  if (n_races == 0) return(paste0("No races found for the ", season_name, " season."))
+
+  paragraphs <- character()
+
+  # ---- Paragraph 1: Overview ----
+  date_range <- paste0(
+    format(min(season_cal$start, na.rm = TRUE), "%B %Y"),
+    " to ",
+    format(max(season_cal$start, na.rm = TRUE), "%B %Y")
+  )
+  series_list <- unique(season_cal$series[!is.na(season_cal$series) & nzchar(season_cal$series)])
+  series_txt <- if (length(series_list) > 0)
+    paste0(" across ", length(series_list), " series (", paste(series_list, collapse = ", "), ")")
+  else ""
+
+  total_nm <- sum(season_cal$length, na.rm = TRUE)
+  nm_txt <- if (total_nm > 0) paste0(", covering ", round(total_nm, 1), " total nautical miles") else ""
+
+  paragraphs <- c(paragraphs,
+    paste0("The ", season_name, " season spanned ", date_range,
+           " with ", n_races, " races", series_txt, nm_txt, "."))
+
+  # ---- Paragraph 2: Placement summary ----
+  place_num <- suppressWarnings(as.numeric(season_cal$place))
+  fleet_num <- suppressWarnings(as.numeric(season_cal$fleet))
+  valid_place <- !is.na(place_num) & !is.na(fleet_num) & fleet_num > 0
+
+  if (sum(valid_place) > 0) {
+    avg_place <- round(mean(place_num[valid_place]), 1)
+    avg_fleet <- round(mean(fleet_num[valid_place]), 1)
+    wins <- sum(place_num[valid_place] == 1)
+    top_half <- sum(place_num[valid_place] <= fleet_num[valid_place] / 2)
+    p_parts <- paste0("Across ", sum(valid_place), " scored races, Wings averaged ",
+                      avg_place, " place in an average fleet of ", avg_fleet, " boats.")
+    if (wins > 0) p_parts <- paste0(p_parts, " Wings took first place ", wins,
+                                     ifelse(wins == 1, " time", " times"), ".")
+    p_parts <- paste0(p_parts, " Wings finished in the top half ", top_half,
+                      " out of ", sum(valid_place), " races.")
+    paragraphs <- c(paragraphs, p_parts)
+  }
+
+  # ---- Paragraph 3: Track data performance ----
+  # Filter track data for this season's races
+  season_track <- track_data |>
+    filter(!is.na(race), nzchar(race))
+
+  if (nrow(season_track) > 0) {
+    # Match track data to this season's calendar entries using time windows
+    matched_track <- tibble()
+    for (i in seq_len(nrow(season_cal))) {
+      tr <- season_track |>
+        filter(race == season_cal$race[i],
+               datetime_local >= season_cal$start[i],
+               datetime_local <= season_cal$end[i])
+      matched_track <- bind_rows(matched_track, tr)
+    }
+
+    if (nrow(matched_track) > 0) {
+      sp <- character()
+      avg_sog <- mean(matched_track$sog_knots, na.rm = TRUE)
+      avg_stw <- mean(matched_track$stw_knots, na.rm = TRUE)
+
+      if (!is.nan(avg_sog))
+        sp <- c(sp, paste0("Season average SOG was ", round(avg_sog, 1), " knots."))
+      if (!is.nan(avg_stw) && !is.nan(avg_sog)) {
+        diff <- round(avg_sog - avg_stw, 2)
+        if (abs(diff) > 0.1)
+          sp <- c(sp, paste0("The SOG-STW differential of ",
+                             ifelse(diff > 0, "+", ""), diff,
+                             " knots suggests ",
+                             ifelse(diff > 0, "generally favorable", "generally adverse"),
+                             " current conditions over the season."))
+      }
+
+      avg_tws <- mean(matched_track$tws_knots, na.rm = TRUE)
+      if (!is.nan(avg_tws))
+        sp <- c(sp, paste0("Average wind speed across the season was ",
+                           round(avg_tws, 1), " knots."))
+
+      avg_polar_sog <- mean(matched_track$Polar_Perf_SOG, na.rm = TRUE)
+      if (!is.nan(avg_polar_sog)) {
+        pp_txt <- if (avg_polar_sog > 0)
+          paste0("At +", round(avg_polar_sog, 2),
+                 " knots above polar targets on average, Wings was consistently outperforming her design speed.")
+        else
+          paste0("At ", round(avg_polar_sog, 2),
+                 " knots relative to polar targets, there is room for improvement in extracting the boat\u2019s full potential.")
+        sp <- c(sp, pp_txt)
+      }
+
+      if (length(sp) > 0) paragraphs <- c(paragraphs, paste(sp, collapse = " "))
+    }
+  }
+
+  paste(paragraphs, collapse = "\n\n")
+}
+
 build_all_narratives <- function(data_rds) {
   track <- data_rds$track_all
   cal   <- data_rds$race_calendar
 
-  # Per-race stats from track data
-  race_stats <- track |>
-    filter(!is.na(race), nzchar(race)) |>
-    mutate(race_date = as.Date(datetime_local)) |>
+  if (nrow(cal) == 0) return(list())
+
+  # Build per-race stats using the calendar's start/end to filter track data.
+  # This correctly handles multiday races by using the full time window.
+  cal_rows <- cal |>
+    mutate(race_date = as.Date(start)) |>
     group_by(race, race_date) |>
     summarise(
-      avg_sog        = mean(sog_knots, na.rm = TRUE),
-      max_sog        = max(sog_knots,  na.rm = TRUE),
-      avg_stw        = mean(stw_knots, na.rm = TRUE),
-      max_stw        = max(stw_knots,  na.rm = TRUE),
-      avg_tws        = mean(tws_knots, na.rm = TRUE),
-      max_tws        = max(tws_knots,  na.rm = TRUE),
-      polar_perf_stw = mean(Polar_Perf_STW, na.rm = TRUE),
-      polar_perf_sog = mean(Polar_Perf_SOG, na.rm = TRUE),
-      duration_hrs   = as.numeric(difftime(
-        max(datetime_local), min(datetime_local), units = "hours")),
-      .groups = "drop"
-    ) |>
-    mutate(across(where(is.numeric), ~ ifelse(is.infinite(.), NA_real_, .)))
+      season   = first(season),
+      series   = first(series),
+      place    = first(place),
+      fleet    = first(fleet),
+      length   = first(length),
+      helm     = first(helm),
+      headsail = if ("headsail" %in% names(cal)) first(headsail) else NA_character_,
+      cal_start = min(start, na.rm = TRUE),
+      cal_end   = max(end, na.rm = TRUE),
+      .groups  = "drop"
+    )
 
-  # Calendar info
-  if (nrow(cal) > 0) {
-    cal_info <- cal |>
-      mutate(race_date = as.Date(start)) |>
-      group_by(race, race_date) |>
-      summarise(
-        season   = first(season),
-        series   = first(series),
-        place    = first(place),
-        fleet    = first(fleet),
-        length   = first(length),
-        helm     = first(helm),
-        headsail = first(headsail),
-        .groups  = "drop"
-      )
-    all_races <- cal_info |>
-      full_join(race_stats, by = c("race", "race_date"))
-  } else {
-    all_races <- race_stats |>
-      mutate(season = NA_character_, series = NA_character_,
-             place = NA_character_, fleet = NA_real_,
-             length = NA_real_, helm = NA_character_,
-             headsail = NA_character_)
-  }
+  all_races <- cal_rows |>
+    rowwise() |>
+    mutate(
+      track_subset = list({
+        tr <- track |>
+          filter(race == .env$race,
+                 datetime_local >= cal_start,
+                 datetime_local <= cal_end)
+        if (nrow(tr) == 0) NULL else tr
+      }),
+      avg_sog        = if (is.null(track_subset)) NA_real_ else mean(track_subset$sog_knots, na.rm = TRUE),
+      max_sog        = if (is.null(track_subset)) NA_real_ else max(track_subset$sog_knots, na.rm = TRUE),
+      avg_stw        = if (is.null(track_subset)) NA_real_ else mean(track_subset$stw_knots, na.rm = TRUE),
+      max_stw        = if (is.null(track_subset)) NA_real_ else max(track_subset$stw_knots, na.rm = TRUE),
+      avg_tws        = if (is.null(track_subset)) NA_real_ else mean(track_subset$tws_knots, na.rm = TRUE),
+      max_tws        = if (is.null(track_subset)) NA_real_ else max(track_subset$tws_knots, na.rm = TRUE),
+      polar_perf_stw = if (is.null(track_subset)) NA_real_ else mean(track_subset$Polar_Perf_STW, na.rm = TRUE),
+      polar_perf_sog = if (is.null(track_subset)) NA_real_ else mean(track_subset$Polar_Perf_SOG, na.rm = TRUE),
+      duration_hrs   = if (is.null(track_subset)) NA_real_ else
+        as.numeric(difftime(max(track_subset$datetime_local), min(track_subset$datetime_local), units = "hours"))
+    ) |>
+    ungroup() |>
+    select(-track_subset, -cal_start, -cal_end) |>
+    mutate(across(where(is.numeric), ~ ifelse(is.infinite(.), NA_real_, .)))
 
   completed <- all_races |>
     filter(!is.na(avg_sog), !is.nan(avg_sog))
@@ -515,46 +615,62 @@ rebuild_rds_from_raw <- function() {
   wind_init  <- parse_wind_mwv(raw_lines_init)
   
   # ---------- READ + NORMALIZE RACE CALENDAR (EMBED INTO RDS) ----------
+  # Each sheet = one season; season name comes from the sheet name.
   race_cal_for_rds <- tibble()
   
   if (file.exists(race_calendar_path)) {
-    race_cal_raw <- readxl::read_excel(race_calendar_path)
-    names(race_cal_raw) <- normalize_excel_names(names(race_cal_raw))
+    sheet_names <- readxl::excel_sheets(race_calendar_path)
+    all_sheets  <- list()
     
-    if ("head_sai" %in% names(race_cal_raw) && !"headsail" %in% names(race_cal_raw)) {
-      race_cal_raw <- race_cal_raw %>% rename(headsail = head_sai)
-    }
-    if ("head_sail" %in% names(race_cal_raw) && !"headsail" %in% names(race_cal_raw)) {
-      race_cal_raw <- race_cal_raw %>% rename(headsail = head_sail)
+    for (sht in sheet_names) {
+      sht_df <- readxl::read_excel(race_calendar_path, sheet = sht)
+      names(sht_df) <- normalize_excel_names(names(sht_df))
+      # Coerce columns that may differ in type across sheets
+      if ("place" %in% names(sht_df)) sht_df$place <- as.character(sht_df$place)
+      if ("fleet" %in% names(sht_df)) sht_df$fleet <- as.numeric(sht_df$fleet)
+      if ("length" %in% names(sht_df)) sht_df$length <- as.numeric(sht_df$length)
+      sht_df$season <- sht
+      all_sheets[[sht]] <- sht_df
     }
     
-    required_cols <- c("race", "helm", "headsail", "start", "end")
+    race_cal_raw <- bind_rows(all_sheets)
+    
+    # Normalize headsail / mainsail column names
+    if ("head_sai" %in% names(race_cal_raw) && !"headsail" %in% names(race_cal_raw))
+      race_cal_raw <- race_cal_raw |> rename(headsail = head_sai)
+    if ("head_sail" %in% names(race_cal_raw) && !"headsail" %in% names(race_cal_raw))
+      race_cal_raw <- race_cal_raw |> rename(headsail = head_sail)
+    if ("main_sail" %in% names(race_cal_raw) && !"mainsail" %in% names(race_cal_raw))
+      race_cal_raw <- race_cal_raw |> rename(mainsail = main_sail)
+    
+    required_cols <- c("race", "start", "end")
     if (all(required_cols %in% names(race_cal_raw))) {
-      race_cal_for_rds <- race_cal_raw %>%
+      race_cal_for_rds <- race_cal_raw |>
         transmute(
           race     = as.character(race),
-          season   = if ("season" %in% names(race_cal_raw)) as.character(season) else NA_character_,
+          season   = as.character(season),
           series   = if ("series" %in% names(race_cal_raw)) as.character(series) else NA_character_,
-          helm     = as.character(helm),
-          headsail = as.character(headsail),
+          helm     = if ("helm" %in% names(race_cal_raw)) as.character(helm) else NA_character_,
+          headsail = if ("headsail" %in% names(race_cal_raw)) as.character(headsail) else NA_character_,
+          mainsail = if ("mainsail" %in% names(race_cal_raw)) as.character(mainsail) else NA_character_,
           place    = if ("place" %in% names(race_cal_raw)) as.character(place) else NA_character_,
           fleet    = if ("fleet" %in% names(race_cal_raw)) as.numeric(fleet) else NA_real_,
           length   = if ("length" %in% names(race_cal_raw)) as.numeric(length) else NA_real_,
           start    = excel_to_posix_local(start),
           end      = excel_to_posix_local(end)
-        ) %>%
-        filter(!is.na(race), nzchar(race)) %>%
+        ) |>
+        filter(!is.na(race), nzchar(race)) |>
         mutate(
           end = if_else(is.na(end), start, end),
           start2 = pmin(start, end, na.rm = TRUE),
           end2   = pmax(start, end, na.rm = TRUE),
           start  = start2,
           end    = end2
-        ) %>%
-        select(race, season, series, helm, headsail, place, fleet, length, start, end) %>%
-        distinct() %>%
+        ) |>
+        select(race, season, series, helm, headsail, mainsail, place, fleet, length, start, end) |>
+        distinct() |>
         arrange(start)
-      }
+    }
   }
   
   # ---------- RMC CHECK ----------
@@ -695,35 +811,42 @@ rebuild_rds_from_raw <- function() {
     mutate(race = "", helm = "", headsail = "")
   
   if (file.exists(race_calendar_path)) {
-    race_cal_raw <- readxl::read_excel(race_calendar_path)
-    names(race_cal_raw) <- normalize_excel_names(names(race_cal_raw))
-    
-    if ("head_sai" %in% names(race_cal_raw) && !"headsail" %in% names(race_cal_raw)) {
-      race_cal_raw <- race_cal_raw %>% rename(headsail = head_sai)
+    sheet_names_2 <- readxl::excel_sheets(race_calendar_path)
+    all_sheets_2  <- list()
+    for (sht in sheet_names_2) {
+      sht_df <- readxl::read_excel(race_calendar_path, sheet = sht)
+      names(sht_df) <- normalize_excel_names(names(sht_df))
+      if ("place" %in% names(sht_df)) sht_df$place <- as.character(sht_df$place)
+      if ("fleet" %in% names(sht_df)) sht_df$fleet <- as.numeric(sht_df$fleet)
+      if ("length" %in% names(sht_df)) sht_df$length <- as.numeric(sht_df$length)
+      all_sheets_2[[sht]] <- sht_df
     }
-    if ("head_sail" %in% names(race_cal_raw) && !"headsail" %in% names(race_cal_raw)) {
-      race_cal_raw <- race_cal_raw %>% rename(headsail = head_sail)
-    }
+    race_cal_raw2 <- bind_rows(all_sheets_2)
     
-    required_cols <- c("race", "helm", "headsail", "start", "end")
-    if (all(required_cols %in% names(race_cal_raw))) {
-      race_cal <- race_cal_raw %>%
+    if ("head_sai" %in% names(race_cal_raw2) && !"headsail" %in% names(race_cal_raw2))
+      race_cal_raw2 <- race_cal_raw2 |> rename(headsail = head_sai)
+    if ("head_sail" %in% names(race_cal_raw2) && !"headsail" %in% names(race_cal_raw2))
+      race_cal_raw2 <- race_cal_raw2 |> rename(headsail = head_sail)
+    
+    required_cols <- c("race", "start", "end")
+    if (all(required_cols %in% names(race_cal_raw2))) {
+      race_cal <- race_cal_raw2 |>
         transmute(
           race     = as.character(race),
-          helm     = as.character(helm),
-          headsail = as.character(headsail),
+          helm     = if ("helm" %in% names(race_cal_raw2)) as.character(helm) else NA_character_,
+          headsail = if ("headsail" %in% names(race_cal_raw2)) as.character(headsail) else NA_character_,
           start    = excel_to_posix_local(start),
           end      = excel_to_posix_local(end)
-        ) %>%
-        filter(!is.na(start)) %>%
-        mutate(end = if_else(is.na(end), start, end)) %>%
+        ) |>
+        filter(!is.na(start)) |>
+        mutate(end = if_else(is.na(end), start, end)) |>
         mutate(
           start2 = pmin(start, end),
           end2   = pmax(start, end),
           start  = start2,
           end    = end2
-        ) %>%
-        select(-start2, -end2) %>%
+        ) |>
+        select(-start2, -end2) |>
         arrange(start)
       
       if (nrow(race_cal) > 0 && nrow(track_all_init) > 0) {
@@ -821,6 +944,13 @@ track_all_loaded <- track_all_loaded |>
          tele_spd_prev_kn <= 30 | tele_spd_next_kn <= 30) |>
   select(-tele_dist_prev_m, -tele_dist_next_m, -tele_dt_prev_s, -tele_dt_next_s,
          -tele_spd_prev_kn, -tele_spd_next_kn)
+
+# Filter out future races (races that haven't started yet)
+now_local <- lubridate::with_tz(Sys.time(), LOCAL_TZ)
+if (nrow(race_calendar_loaded) > 0) {
+  race_calendar_loaded <- race_calendar_loaded |>
+    filter(!is.na(start), start <= now_local)
+}
 
 data_rds <- list(
   track_all      = track_all_loaded,
@@ -1233,7 +1363,9 @@ a.social-yt-link:hover {
         DTOutput("season_summary_table"),
         br(),
         DTOutput("season_table")
-      )
+      ),
+      br(),
+      uiOutput("season_narrative_card")
     ),
     tabPanel(
       "Race Analytics",
@@ -1527,7 +1659,7 @@ server <- function(input, output, session) {
       div(
         class = "race-narrative-title",
         HTML('<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="rgba(100,180,255,0.7)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>'),
-        "Race Report"
+        "AI Race Report"
       ),
       div(class = "race-narrative-body", HTML(body_html))
     )
@@ -1701,8 +1833,8 @@ server <- function(input, output, session) {
         Race         = race,
         Place        = ifelse(is.na(place) | place == "", "", place),
         Fleet        = ifelse(is.na(fleet), "n/a", as.character(as.integer(fleet))),
-        Length       = ifelse(is.na(length), "", as.character(length)),
-        Duration_Hrs = ifelse(is.na(duration_hrs), "", as.character(duration_hrs)),
+        Length       = ifelse(is.na(length), "", formatC(length, format = "f", digits = 2)),
+        Duration_Hrs = ifelse(is.na(duration_hrs), "", formatC(duration_hrs, format = "f", digits = 2)),
         `NMEA Data`  = ifelse(has_nmea, "\u2705", "\u274c")
       )
     
@@ -1714,6 +1846,36 @@ server <- function(input, output, session) {
     )
   })
   
+  # AI Race Season Report
+  output$season_narrative_card <- renderUI({
+    req(input$season_select)
+    if (input$season_select == "All") return(NULL)
+    
+    season_name <- input$season_select
+    cal <- data_rds$race_calendar |>
+      filter(!is.na(season), season == season_name)
+    
+    if (isTruthy(input$season_series_select) && input$season_series_select != "All") {
+      cal <- cal |> filter(!is.na(series), series == input$season_series_select)
+    }
+    
+    if (nrow(cal) == 0) return(NULL)
+    
+    text <- generate_season_narrative(season_name, cal, data_rds$track_all)
+    
+    paras <- strsplit(text, "\n\n", fixed = TRUE)[[1]]
+    body_html <- paste0("<p>", htmltools::htmlEscape(paras), "</p>", collapse = "\n")
+    
+    div(
+      class = "race-narrative",
+      div(
+        class = "race-narrative-title",
+        HTML('<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="rgba(100,180,255,0.7)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>'),
+        "AI Race Season Report"
+      ),
+      div(class = "race-narrative-body", HTML(body_html))
+    )
+  })
 
   # Filter track data to the race selected from the Race Analysis dropdowns
   track <- reactive({
