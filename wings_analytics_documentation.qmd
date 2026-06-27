@@ -1,7 +1,8 @@
 ---
 title: "Wings Analytics Documentation"
 author: "Mike Danielson"
-date: "June 21, 2026"
+date: "June 27, 2026 11:16 AM EDT"
+date-format: "MMMM D, YYYY h:mm A z"
 format:
   html:
     toc: true
@@ -10,7 +11,58 @@ format:
 
 # Overview
 
-Wings Analytics is a sailing performance analytics platform built on R and Shiny. It transforms raw NMEA GPS data logged from onboard instruments into interactive race analysis, including spatial track visualization, speed diagnostics, and polar performance benchmarking. The application integrates an external race calendar to label track data with race metadata and provides a season-level view of racing activity.
+Wings Analytics is a sailing performance analytics platform built on R and Shiny. It transforms raw NMEA GPS and instrument data logged from onboard electronics into interactive race analysis, including spatial track visualization, speed diagnostics, and polar performance benchmarking. The application integrates an external race calendar to label track data with race metadata and provides season-level and series-level views of racing activity.
+
+# NMEA 2000 & 0183: Background
+
+## What Is NMEA 0183?
+
+NMEA 0183 is a serial communication standard published by the National Marine Electronics Association (NMEA). Originally introduced in 1983, it defines the electrical interface and data protocol used by marine electronic instruments — GPS receivers, chart plotters, wind sensors, speed logs, and autopilots — to exchange navigation data. Despite its age, NMEA 0183 remains the most widely supported protocol in recreational and racing sailboats, and is still used alongside its newer successor, NMEA 2000.
+
+## How It Works
+
+NMEA 0183 transmits data as plain-text ASCII sentences over an RS-422 serial connection at 4,800 baud (though higher rates are common on modern devices). Each sentence begins with a `$` character followed by a two-character talker ID (identifying the source device) and a three-character sentence type. Fields are comma-delimited and the sentence ends with an optional checksum after a `*` character.
+
+For example, a typical RMC (Recommended Minimum Navigation) sentence looks like:
+
+```
+$GPRMC,123519,A,4807.038,N,01131.000,E,022.4,084.4,230394,003.1,W*6A
+```
+
+This single line encodes UTC time, position in degrees and minutes, speed over ground, course over ground, and the date — everything needed to plot a track point on a chart.
+
+## NMEA 2000 vs. NMEA 0183
+
+Wings is equipped with a B&G instrument network that communicates internally over NMEA 2000 (also called N2K or SignalK in some open-source contexts). NMEA 2000 is the modern successor to NMEA 0183 — it uses a Controller Area Network (CAN bus) backbone, transmits binary data at 250 kbps (roughly 50× faster than NMEA 0183's 4,800 baud), and supports multi-device arbitration so that dozens of instruments can share a single backbone cable without signal collisions. Where NMEA 0183 is a point-to-point serial protocol carrying one ASCII sentence at a time, NMEA 2000 is a true network: every device has an address, messages use standardized Parameter Group Numbers (PGNs), and instruments can both transmit and receive on the same physical wire.
+
+Despite these advantages, Wings Analytics ingests data in the older NMEA 0183 text format. The reasons are practical:
+
+- **Simplicity of parsing.** NMEA 0183 sentences are human-readable ASCII text. Parsing them requires only basic string splitting — no binary decoding libraries, no PGN lookup tables, and no endianness handling. This makes the R-based pipeline straightforward and transparent.
+- **Broad tooling support.** Open-source charting and logging software — most importantly OpenCPN, which Wings uses as its onboard data recorder — has mature, well-tested support for NMEA 0183 logging to plain `.txt` files. NMEA 2000 logging typically requires proprietary or more complex tooling.
+- **Sufficient data content.** The three sentence types used by Wings Analytics (RMC, VHW, MWV) capture position, boat speed, and wind — the core variables needed for track reconstruction and polar analysis. NMEA 2000 carries richer data (engine telemetry, tank levels, AIS targets), but none of those additional PGNs are required for the current analysis scope.
+- **Portability.** Plain text files are trivially stored, transferred, and version-controlled. Binary NMEA 2000 logs require specialized viewers and are harder to inspect or debug.
+
+In short, NMEA 2000 runs the boat's live instrument network; NMEA 0183 is used as the data export format because it is simpler, more portable, and fully sufficient for the analytics performed here.
+
+## Data Recording and Upload
+
+The onboard data recording chain works as follows:
+
+1. **B&G NMEA 2000 Network.** Wings' instruments — GPS, wind sensor, knotmeter, and multifunction display — communicate over a B&G NMEA 2000 backbone. This is the boat's primary instrument bus, providing real-time data to helm displays and autopilot.
+
+2. **Yacht Devices NMEA 2000 Gateway.** A Yacht Devices YDNG-03 gateway bridges the NMEA 2000 network to NMEA 0183. The gateway listens to all traffic on the N2K backbone, translates relevant PGNs into standard NMEA 0183 ASCII sentences, and outputs them over a serial or Wi-Fi connection. This is the critical translation step that converts the binary N2K data into the text-based format that OpenCPN and the analytics pipeline can consume.
+
+3. **OpenCPN Data Logging.** OpenCPN, an open-source chart plotter and navigation application, runs on a laptop aboard Wings. It connects to the Yacht Devices gateway and receives the translated NMEA 0183 sentence stream. OpenCPN logs these sentences to timestamped `.txt` files — one file per session — creating a complete record of every GPS fix, speed reading, and wind observation during the sail.
+
+4. **Starlink Upload to Cloud Storage.** After racing (or during, if connectivity allows), the logged `.txt` files are uploaded from the onboard laptop to a cloud drive via a Starlink satellite internet connection. This makes the raw data available from shore without needing to physically transfer files from the boat.
+
+5. **Analytics Ingestion.** The Wings Analytics pipeline scans the cloud-synced data directory for `.txt` files, parses them through the NMEA pipeline described below, and builds the structured dataset that powers the Shiny application.
+
+## Common Uses in Sailing
+
+On a racing sailboat like Wings, multiple NMEA-capable instruments feed data onto a shared bus. The GPS unit broadcasts position and speed fixes (RMC sentences), the knotmeter sends boat speed through water (VHW sentences), and the wind instrument transmits wind angle and speed (MWV sentences). A data logger records these sentences to a text file, creating a complete time-stamped record of the boat's performance throughout a race.
+
+This raw log is the foundation of Wings Analytics: thousands of NMEA sentences per race, each carrying a snapshot of position, speed, or wind conditions, which the application parses, synchronizes, and transforms into structured performance data.
 
 # Data Pipeline
 
@@ -18,28 +70,27 @@ The application uses a multi-stage pipeline to convert raw text-based NMEA sente
 
 ## Raw Data Ingestion
 
-The system scans a configured data directory for `.txt` files containing standard NMEA 0183 sentences. Four sentence types are parsed:
+The system scans a configured data directory for `.txt` files containing standard NMEA 0183 sentences. Three sentence types are parsed:
 
-| Sentence     | Data Provided                                                        | Parser Function      |
-|--------------|----------------------------------------------------------------------|----------------------|
-| `$..RMC`     | Latitude, longitude, speed over ground (SOG), course over ground (COG), UTC date/time | `parse_rmc_any()`    |
-| `$..DBT/DPT` | Water depth in meters and feet                                       | `parse_depth()`      |
-| `$..VHW`     | Boat speed through water (STW)                                       | `parse_boat_speed()` |
-| `$..MWV`     | True or apparent wind angle (TWA) and wind speed (TWS), with unit conversion (knots, m/s, km/h) | `parse_wind_mwv()`   |
+| Sentence | Data Provided                                                        | Parser Function      |
+|----------|----------------------------------------------------------------------|----------------------|
+| `$..RMC` | Latitude, longitude, speed over ground (SOG), course over ground (COG), UTC date/time | `parse_rmc_any()`    |
+| `$..VHW` | Boat speed through water (STW)                                       | `parse_boat_speed()` |
+| `$..MWV` | True or apparent wind angle (TWA) and wind speed (TWS), with unit conversion (knots, m/s, km/h) | `parse_wind_mwv()`   |
 
 Coordinate parsing converts NMEA degree-minute format to decimal degrees via `convert_degmin()`. Date and time fields from the RMC sentence are combined into a UTC `POSIXct` timestamp, then converted to the local timezone (Eastern) for display and calendar matching.
 
 ## Processing and Synchronization
 
-Different NMEA sentences are recorded at varying intervals and do not share a common timestamp. The pipeline uses `$..RMC` sentences as the primary time anchor. The function `nearest_sync_by_line_index()` aligns depth, wind, and boat speed observations to their nearest RMC record by raw file line number using `findInterval()`. This approach is efficient and avoids expensive datetime joins across hundreds of thousands of records.
+Different NMEA sentences are recorded at varying intervals and do not share a common timestamp. GPS fixes typically arrive once per second, while wind and speed instruments may report at different rates. The pipeline uses `$..RMC` sentences as the primary time anchor. The function `nearest_sync_by_line_index()` aligns wind and boat speed observations to their nearest RMC record by raw file line number using `findInterval()`. This approach is efficient and avoids expensive datetime joins across hundreds of thousands of records.
 
-After synchronization, aggregated values (mean depth, mean STW, mean wind) are joined to the RMC track by `datetime_utc`.
+After synchronization, aggregated values (mean STW, mean wind speed and angle) are joined to the RMC track by `datetime_utc`, producing a single unified time series with position, boat speed, and wind data on every row.
 
 ## Data Cleaning
 
 Several cleaning steps are applied to the synchronized track data:
 
-- **Speed filtering**: SOG values above 15 knots are excluded, as they indicate GPS noise or sensor errors rather than actual sailing speed.
+- **Speed filtering**: SOG values above 15 knots are excluded, as they indicate GPS noise or sensor errors rather than actual sailing speed. STW values below 2 knots are excluded from performance averages to filter out erroneous readings during mark roundings or pre-start maneuvering.
 - **Exclusion zone**: Track points within 1,000 feet of a fixed coordinate (the home dock) are removed to exclude pre-race instrument warmup data.
 - **Teleport detection**: Isolated GPS points that imply physically impossible jumps (e.g., from UTC date-rollover bugs) are detected by computing implied speed to both temporal neighbors. If a point implies speeds exceeding 30 knots to both its predecessor and successor, it is dropped.
 
@@ -57,6 +108,10 @@ This allows the Shiny app to load a pre-computed dataset on startup without re-p
 # Polar Performance
 
 A core feature is comparing observed boat performance against a theoretical reference polar model loaded from `Polars.xlsx`.
+
+## What Are Polars?
+
+A polar diagram (or polar table) describes a sailboat's theoretical target speed at every combination of true wind speed (TWS) and true wind angle (TWA). These targets are derived from velocity prediction programs (VPPs) that model the boat's hull shape, sail plan, and displacement. In practice, polars serve as a benchmark: if the boat is sailing slower than the polar target for the current wind conditions, there is likely room to improve sail trim, steering, or tactical positioning.
 
 ## How Polar Binning Works
 
@@ -85,7 +140,9 @@ The Race Analysis tab presents five polar table views:
 
 The system integrates an external Excel calendar (`Race Calendar.xlsx`) to label track data with race context.
 
-## Calendar Columns
+## Calendar Structure
+
+The calendar is organized as a multi-sheet Excel workbook, where each sheet represents a racing season (e.g., "2024-25 Winter"). Within each sheet, rows define individual race events.
 
 The calendar is expected to have at minimum: `race`, `helm`, `headsail`, `start`, and `end`. Optional columns include `season`, `series`, `place`, `fleet`, and `length`. Column names are normalized to lowercase with underscores via `normalize_excel_names()`.
 
@@ -99,13 +156,20 @@ The Shiny application is organized into the following tabs:
 
 ## Race Seasons
 
-A season-level summary of all races in the calendar. The user selects a season from a dropdown, and a table displays each race event with its date, series, place, fleet size, distance, and elapsed time. A TOTAL row at the bottom sums distance and duration. Races with the same name on different dates are listed as separate rows (grouped by race name and start date).
+A season-level summary of all races in the calendar. The user selects a season and optionally a race series from dropdown filters. An AI-generated narrative provides contextual commentary: when "All" is selected, a program-wide performance narrative is displayed; for a specific season, a season-specific narrative is shown.
 
-Clicking any race row navigates directly to the Race Analysis tab for that race.
+Below the narrative, two summary tables aggregate key statistics:
+
+- **Season Summary Table**: One row per season showing race count, average place, average fleet size, total distance, sailing hours, average and max STW, max TWS, and total NMEA data points. When a single season is selected, this table contains one row; when "All" is selected, it shows one row per season.
+- **Series Summary Table**: One row per race series with the same statistics. When a specific series is selected, this table contains one row; when "All" is selected, it shows one row per series.
+
+Both summary tables include a footer row with totals (for additive metrics like distance and hours), averages (for Avg Place, Avg Fleet, Avg STW), and maximums (for Max STW, Max TWS).
+
+Below the summary tables, a detailed race list displays each race event with its date, series, place, fleet size, distance, sailing hours, average and max STW, max TWS, and NMEA data point count. Races with the same name on different dates are listed as separate rows (grouped by race name and start date).
 
 ## Race Analysis
 
-Displays detailed analysis for a single race selected from the Race Seasons table. At the top, a summary table shows key metrics:
+Displays detailed analysis for a single race selected via season, series, and race dropdowns. At the top, a summary table shows key metrics:
 
 | Metric | Source |
 |--------|--------|
@@ -117,8 +181,9 @@ Displays detailed analysis for a single race selected from the Race Seasons tabl
 
 Below the summary:
 
+- **AI Race Report**: A deterministically generated narrative analyzing the race's distance, placement, speed, wind conditions, and polar performance in context of the full racing history.
 - **Leaflet map**: GPS track rendered as polylines, color-coded by day (local date) to distinguish legs of multiday races.
-- **Speed plot**: Raw SOG and STW traces overlaid with 1-minute moving averages, faceted by day.
+- **Speed plot**: Raw SOG and STW traces overlaid with 1-minute moving averages.
 - **Polar tables**: Five sub-tabs as described in the Polar Performance section above.
 
 ## Social
@@ -127,7 +192,7 @@ Links to external content including Spotify tracks by Wings J112, YouTube videos
 
 ## About
 
-Links to this documentation and the project's GitHub repository.
+Links to this documentation, the project's GitHub repository, and data file management controls (password-protected, local-only) for rebuilding or deleting the RDS data files.
 
 # Deployment
 
@@ -138,9 +203,57 @@ The application supports two modes of operation controlled by environment detect
 
 Environment detection checks for standard deployment environment variables (`SHINY_PORT`, `RSCONNECT_SERVER`, etc.). The `IS_DEPLOYED` flag controls whether `rebuild_rds_from_raw()` is permitted to run.
 
+# The R Ecosystem
+
+## R
+
+R is a free, open-source programming language designed for statistical computing and data analysis. It was created in the early 1990s by Ross Ihaka and Robert Gentleman at the University of Auckland, New Zealand, as an open-source implementation of the S language developed at Bell Laboratories. R is maintained by the R Core Team and distributed through the Comprehensive R Archive Network (CRAN), which hosts over 20,000 contributed packages covering statistics, machine learning, visualization, spatial analysis, and virtually every other quantitative discipline.
+
+R's strengths are in data manipulation, statistical modeling, and visualization. Its built-in data frame structure, formula-based modeling syntax, and rich package ecosystem make it a natural choice for projects like Wings Analytics, where raw sensor data must be parsed, cleaned, joined, aggregated, and visualized. The `tidyverse` family of packages (dplyr, tidyr, ggplot2, readr, and others) provides a consistent grammar for data wrangling that is used extensively throughout this project.
+
+## RStudio
+
+RStudio is an integrated development environment (IDE) purpose-built for R (and now Python as well). It was first released in 2011 by J.J. Allaire and provides a unified interface combining a code editor, R console, file browser, plot viewer, help system, environment inspector, and package manager. RStudio transformed R from a command-line-centric language into an accessible platform for data science by making the development workflow visual and interactive.
+
+RStudio is developed by Posit, PBC (formerly RStudio, PBC), which rebranded in 2022 to reflect its expanding support for multilingual data science. Posit maintains both the open-source RStudio Desktop IDE and commercial server products, and is the primary corporate sponsor of many of R's most widely used packages.
+
+## Posit Assistant
+
+Posit Assistant is an AI-powered coding assistant integrated directly into RStudio. It provides context-aware help for R and Python development, including code generation, debugging, statistical guidance, and data analysis support. Posit Assistant can execute code in the user's active R session, read and write project files, and interact with the workspace — making it a collaborative tool rather than a detached chatbot.
+
+Wings Analytics was developed collaboratively with Posit Assistant. The AI assistant contributed to NMEA parsing logic, data pipeline design, Shiny UI construction, polar performance calculations, and this documentation. This represents a practical example of AI-assisted development: the domain expertise (sailing, racing tactics, instrument systems) came from the developer, while the assistant accelerated implementation by generating code, suggesting architectural patterns, debugging edge cases, and drafting documentation from technical context.
+
+## Shiny
+
+Shiny is an R package that turns R scripts into interactive web applications without requiring any knowledge of HTML, CSS, or JavaScript. Created by Joe Cheng at RStudio (now Posit) and first released in 2012, Shiny lets R users build reactive dashboards and data tools that run in a web browser. The developer defines a user interface (UI) and a server function containing R logic; Shiny handles the communication between the browser and the R process, automatically re-executing code when inputs change.
+
+Wings Analytics is a Shiny application. The entire platform — interactive maps, filterable tables, polar performance grids, season summaries, and AI-generated race narratives — is built in a single `app.R` file using standard Shiny patterns. The UI uses the `bslib` package for modern Bootstrap 5 theming with a custom dark glass-morphism aesthetic.
+
+## GitHub
+
+The Wings Analytics source code is maintained in a Git repository hosted on GitHub. GitHub is a cloud-based platform for version control and collaboration built on top of Git, the distributed version control system created by Linus Torvalds in 2005. GitHub provides a web interface for browsing code, tracking changes, managing issues, and collaborating with other developers. It is the dominant platform for open-source software and is widely used for private projects as well.
+
+For Wings Analytics, GitHub serves as the canonical code repository — every change to the application, data pipeline, and documentation is tracked with a full history of commits. RStudio has built-in Git integration, making it straightforward to commit, push, and pull changes directly from the IDE. The repository also acts as a backup: if the development machine is lost, the entire project can be restored from GitHub. A link to the Wings Analytics GitHub repository is available in the app's About tab.
+
+### Deployment at Near-Zero Cost
+
+One of Shiny's most compelling features for independent projects is its deployment model. Posit offers **shinyapps.io**, a cloud hosting platform where Shiny applications can be deployed directly from RStudio with a single command (`rsconnect::deployApp()`). The free tier of shinyapps.io provides 25 active hours per month and up to 5 applications — more than sufficient for a personal analytics tool like Wings Analytics that is accessed intermittently by a small number of users.
+
+This means the entire Wings Analytics platform — from raw NMEA data to interactive web application — runs on a stack that costs essentially nothing:
+
+- **R**: Free and open-source.
+- **RStudio Desktop**: Free and open-source.
+- **All R packages** (Shiny, leaflet, DT, tidyverse, etc.): Free and open-source.
+- **shinyapps.io hosting**: Free tier available.
+- **OpenCPN**: Free and open-source.
+
+The only costs in the pipeline are hardware (the onboard laptop and Yacht Devices gateway) and the Starlink internet subscription, both of which serve broader purposes beyond analytics. The result is a fully functional, publicly accessible sailing performance platform built and hosted for virtually no incremental cost.
+
 # Technical Notes
 
-- All times are stored internally as UTC (`POSIXct`) and converted to Eastern time (`America/New_York`) for display and calendar matching via `lubridate::with_tz()`.
-- The `geosphere` package is used for Haversine distance calculations (exclusion zone filtering and teleport detection).
-- DT (DataTables) is used for all interactive tables, with custom JavaScript footer callbacks for computing column averages in the polar performance tables.
-- The app uses a dark theme implemented via inline CSS, with a glass-morphism card aesthetic.
+- **Timezone handling**: All times are stored internally as UTC (`POSIXct`) and converted to Eastern time (`America/New_York`) for display and calendar matching via `lubridate::with_tz()`.
+- **Geospatial calculations**: The `geosphere` package provides Haversine distance calculations for exclusion zone filtering and teleport detection.
+- **Interactive tables**: DT (DataTables) powers all interactive tables, with custom JavaScript footer callbacks for computing column sums, averages, and maximums.
+- **Mapping**: The `leaflet` package renders GPS tracks as interactive polylines on OpenStreetMap tiles.
+- **Visual design**: The app uses a dark theme implemented via inline CSS, with a glass-morphism card aesthetic and responsive layout.
+- **AI narratives**: Race and season narratives are deterministically generated from performance data and cached in `race_narratives.rds`. They use a hash-based quote selection mechanism to ensure the same race always produces the same narrative without randomness.

@@ -7,7 +7,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
 <meta name="author" content="Mike Danielson">
-<meta name="dcterms.date" content="2026-06-21">
 
 <title>Wings Analytics Documentation</title>
 <style>
@@ -52,6 +51,14 @@ ul.task-list li input[type="checkbox"] {
    
   <ul>
   <li><a href="#overview" id="toc-overview" class="nav-link active" data-scroll-target="#overview">Overview</a></li>
+  <li><a href="#nmea-2000-0183-background" id="toc-nmea-2000-0183-background" class="nav-link" data-scroll-target="#nmea-2000-0183-background">NMEA 2000 &amp; 0183: Background</a>
+  <ul class="collapse">
+  <li><a href="#what-is-nmea-0183" id="toc-what-is-nmea-0183" class="nav-link" data-scroll-target="#what-is-nmea-0183">What Is NMEA 0183?</a></li>
+  <li><a href="#how-it-works" id="toc-how-it-works" class="nav-link" data-scroll-target="#how-it-works">How It Works</a></li>
+  <li><a href="#nmea-2000-vs.-nmea-0183" id="toc-nmea-2000-vs.-nmea-0183" class="nav-link" data-scroll-target="#nmea-2000-vs.-nmea-0183">NMEA 2000 vs.&nbsp;NMEA 0183</a></li>
+  <li><a href="#data-recording-and-upload" id="toc-data-recording-and-upload" class="nav-link" data-scroll-target="#data-recording-and-upload">Data Recording and Upload</a></li>
+  <li><a href="#common-uses-in-sailing" id="toc-common-uses-in-sailing" class="nav-link" data-scroll-target="#common-uses-in-sailing">Common Uses in Sailing</a></li>
+  </ul></li>
   <li><a href="#data-pipeline" id="toc-data-pipeline" class="nav-link" data-scroll-target="#data-pipeline">Data Pipeline</a>
   <ul class="collapse">
   <li><a href="#raw-data-ingestion" id="toc-raw-data-ingestion" class="nav-link" data-scroll-target="#raw-data-ingestion">Raw Data Ingestion</a></li>
@@ -61,13 +68,14 @@ ul.task-list li input[type="checkbox"] {
   </ul></li>
   <li><a href="#polar-performance" id="toc-polar-performance" class="nav-link" data-scroll-target="#polar-performance">Polar Performance</a>
   <ul class="collapse">
+  <li><a href="#what-are-polars" id="toc-what-are-polars" class="nav-link" data-scroll-target="#what-are-polars">What Are Polars?</a></li>
   <li><a href="#how-polar-binning-works" id="toc-how-polar-binning-works" class="nav-link" data-scroll-target="#how-polar-binning-works">How Polar Binning Works</a></li>
   <li><a href="#performance-metrics" id="toc-performance-metrics" class="nav-link" data-scroll-target="#performance-metrics">Performance Metrics</a></li>
   <li><a href="#polar-tables-in-the-app" id="toc-polar-tables-in-the-app" class="nav-link" data-scroll-target="#polar-tables-in-the-app">Polar Tables in the App</a></li>
   </ul></li>
   <li><a href="#race-calendar-integration" id="toc-race-calendar-integration" class="nav-link" data-scroll-target="#race-calendar-integration">Race Calendar Integration</a>
   <ul class="collapse">
-  <li><a href="#calendar-columns" id="toc-calendar-columns" class="nav-link" data-scroll-target="#calendar-columns">Calendar Columns</a></li>
+  <li><a href="#calendar-structure" id="toc-calendar-structure" class="nav-link" data-scroll-target="#calendar-structure">Calendar Structure</a></li>
   <li><a href="#matching-process" id="toc-matching-process" class="nav-link" data-scroll-target="#matching-process">Matching Process</a></li>
   </ul></li>
   <li><a href="#app-structure" id="toc-app-structure" class="nav-link" data-scroll-target="#app-structure">App Structure</a>
@@ -78,6 +86,17 @@ ul.task-list li input[type="checkbox"] {
   <li><a href="#about" id="toc-about" class="nav-link" data-scroll-target="#about">About</a></li>
   </ul></li>
   <li><a href="#deployment" id="toc-deployment" class="nav-link" data-scroll-target="#deployment">Deployment</a></li>
+  <li><a href="#the-r-ecosystem" id="toc-the-r-ecosystem" class="nav-link" data-scroll-target="#the-r-ecosystem">The R Ecosystem</a>
+  <ul class="collapse">
+  <li><a href="#r" id="toc-r" class="nav-link" data-scroll-target="#r">R</a></li>
+  <li><a href="#rstudio" id="toc-rstudio" class="nav-link" data-scroll-target="#rstudio">RStudio</a></li>
+  <li><a href="#posit-assistant" id="toc-posit-assistant" class="nav-link" data-scroll-target="#posit-assistant">Posit Assistant</a></li>
+  <li><a href="#shiny" id="toc-shiny" class="nav-link" data-scroll-target="#shiny">Shiny</a></li>
+  <li><a href="#github" id="toc-github" class="nav-link" data-scroll-target="#github">GitHub</a>
+  <ul class="collapse">
+  <li><a href="#deployment-at-near-zero-cost" id="toc-deployment-at-near-zero-cost" class="nav-link" data-scroll-target="#deployment-at-near-zero-cost">Deployment at Near-Zero Cost</a></li>
+  </ul></li>
+  </ul></li>
   <li><a href="#technical-notes" id="toc-technical-notes" class="nav-link" data-scroll-target="#technical-notes">Technical Notes</a></li>
   </ul>
 </nav>
@@ -103,7 +122,7 @@ ul.task-list li input[type="checkbox"] {
     <div>
     <div class="quarto-title-meta-heading">Published</div>
     <div class="quarto-title-meta-contents">
-      <p class="date">June 21, 2026</p>
+      <p class="date">June 27, 2026 11:16 AM EDT</p>
     </div>
   </div>
   
@@ -117,19 +136,61 @@ ul.task-list li input[type="checkbox"] {
 
 <section id="overview" class="level1">
 <h1>Overview</h1>
-<p>Wings Analytics is a sailing performance analytics platform built on R and Shiny. It transforms raw NMEA GPS data logged from onboard instruments into interactive race analysis, including spatial track visualization, speed diagnostics, and polar performance benchmarking. The application integrates an external race calendar to label track data with race metadata and provides a season-level view of racing activity.</p>
+<p>Wings Analytics is a sailing performance analytics platform built on R and Shiny. It transforms raw NMEA GPS and instrument data logged from onboard electronics into interactive race analysis, including spatial track visualization, speed diagnostics, and polar performance benchmarking. The application integrates an external race calendar to label track data with race metadata and provides season-level and series-level views of racing activity.</p>
+</section>
+<section id="nmea-2000-0183-background" class="level1">
+<h1>NMEA 2000 &amp; 0183: Background</h1>
+<section id="what-is-nmea-0183" class="level2">
+<h2 class="anchored" data-anchor-id="what-is-nmea-0183">What Is NMEA 0183?</h2>
+<p>NMEA 0183 is a serial communication standard published by the National Marine Electronics Association (NMEA). Originally introduced in 1983, it defines the electrical interface and data protocol used by marine electronic instruments — GPS receivers, chart plotters, wind sensors, speed logs, and autopilots — to exchange navigation data. Despite its age, NMEA 0183 remains the most widely supported protocol in recreational and racing sailboats, and is still used alongside its newer successor, NMEA 2000.</p>
+</section>
+<section id="how-it-works" class="level2">
+<h2 class="anchored" data-anchor-id="how-it-works">How It Works</h2>
+<p>NMEA 0183 transmits data as plain-text ASCII sentences over an RS-422 serial connection at 4,800 baud (though higher rates are common on modern devices). Each sentence begins with a <code>$</code> character followed by a two-character talker ID (identifying the source device) and a three-character sentence type. Fields are comma-delimited and the sentence ends with an optional checksum after a <code>*</code> character.</p>
+<p>For example, a typical RMC (Recommended Minimum Navigation) sentence looks like:</p>
+<pre><code>$GPRMC,123519,A,4807.038,N,01131.000,E,022.4,084.4,230394,003.1,W*6A</code></pre>
+<p>This single line encodes UTC time, position in degrees and minutes, speed over ground, course over ground, and the date — everything needed to plot a track point on a chart.</p>
+</section>
+<section id="nmea-2000-vs.-nmea-0183" class="level2">
+<h2 class="anchored" data-anchor-id="nmea-2000-vs.-nmea-0183">NMEA 2000 vs.&nbsp;NMEA 0183</h2>
+<p>Wings is equipped with a B&amp;G instrument network that communicates internally over NMEA 2000 (also called N2K or SignalK in some open-source contexts). NMEA 2000 is the modern successor to NMEA 0183 — it uses a Controller Area Network (CAN bus) backbone, transmits binary data at 250 kbps (roughly 50× faster than NMEA 0183’s 4,800 baud), and supports multi-device arbitration so that dozens of instruments can share a single backbone cable without signal collisions. Where NMEA 0183 is a point-to-point serial protocol carrying one ASCII sentence at a time, NMEA 2000 is a true network: every device has an address, messages use standardized Parameter Group Numbers (PGNs), and instruments can both transmit and receive on the same physical wire.</p>
+<p>Despite these advantages, Wings Analytics ingests data in the older NMEA 0183 text format. The reasons are practical:</p>
+<ul>
+<li><strong>Simplicity of parsing.</strong> NMEA 0183 sentences are human-readable ASCII text. Parsing them requires only basic string splitting — no binary decoding libraries, no PGN lookup tables, and no endianness handling. This makes the R-based pipeline straightforward and transparent.</li>
+<li><strong>Broad tooling support.</strong> Open-source charting and logging software — most importantly OpenCPN, which Wings uses as its onboard data recorder — has mature, well-tested support for NMEA 0183 logging to plain <code>.txt</code> files. NMEA 2000 logging typically requires proprietary or more complex tooling.</li>
+<li><strong>Sufficient data content.</strong> The three sentence types used by Wings Analytics (RMC, VHW, MWV) capture position, boat speed, and wind — the core variables needed for track reconstruction and polar analysis. NMEA 2000 carries richer data (engine telemetry, tank levels, AIS targets), but none of those additional PGNs are required for the current analysis scope.</li>
+<li><strong>Portability.</strong> Plain text files are trivially stored, transferred, and version-controlled. Binary NMEA 2000 logs require specialized viewers and are harder to inspect or debug.</li>
+</ul>
+<p>In short, NMEA 2000 runs the boat’s live instrument network; NMEA 0183 is used as the data export format because it is simpler, more portable, and fully sufficient for the analytics performed here.</p>
+</section>
+<section id="data-recording-and-upload" class="level2">
+<h2 class="anchored" data-anchor-id="data-recording-and-upload">Data Recording and Upload</h2>
+<p>The onboard data recording chain works as follows:</p>
+<ol type="1">
+<li><p><strong>B&amp;G NMEA 2000 Network.</strong> Wings’ instruments — GPS, wind sensor, knotmeter, and multifunction display — communicate over a B&amp;G NMEA 2000 backbone. This is the boat’s primary instrument bus, providing real-time data to helm displays and autopilot.</p></li>
+<li><p><strong>Yacht Devices NMEA 2000 Gateway.</strong> A Yacht Devices YDNG-03 gateway bridges the NMEA 2000 network to NMEA 0183. The gateway listens to all traffic on the N2K backbone, translates relevant PGNs into standard NMEA 0183 ASCII sentences, and outputs them over a serial or Wi-Fi connection. This is the critical translation step that converts the binary N2K data into the text-based format that OpenCPN and the analytics pipeline can consume.</p></li>
+<li><p><strong>OpenCPN Data Logging.</strong> OpenCPN, an open-source chart plotter and navigation application, runs on a laptop aboard Wings. It connects to the Yacht Devices gateway and receives the translated NMEA 0183 sentence stream. OpenCPN logs these sentences to timestamped <code>.txt</code> files — one file per session — creating a complete record of every GPS fix, speed reading, and wind observation during the sail.</p></li>
+<li><p><strong>Starlink Upload to Cloud Storage.</strong> After racing (or during, if connectivity allows), the logged <code>.txt</code> files are uploaded from the onboard laptop to a cloud drive via a Starlink satellite internet connection. This makes the raw data available from shore without needing to physically transfer files from the boat.</p></li>
+<li><p><strong>Analytics Ingestion.</strong> The Wings Analytics pipeline scans the cloud-synced data directory for <code>.txt</code> files, parses them through the NMEA pipeline described below, and builds the structured dataset that powers the Shiny application.</p></li>
+</ol>
+</section>
+<section id="common-uses-in-sailing" class="level2">
+<h2 class="anchored" data-anchor-id="common-uses-in-sailing">Common Uses in Sailing</h2>
+<p>On a racing sailboat like Wings, multiple NMEA-capable instruments feed data onto a shared bus. The GPS unit broadcasts position and speed fixes (RMC sentences), the knotmeter sends boat speed through water (VHW sentences), and the wind instrument transmits wind angle and speed (MWV sentences). A data logger records these sentences to a text file, creating a complete time-stamped record of the boat’s performance throughout a race.</p>
+<p>This raw log is the foundation of Wings Analytics: thousands of NMEA sentences per race, each carrying a snapshot of position, speed, or wind conditions, which the application parses, synchronizes, and transforms into structured performance data.</p>
+</section>
 </section>
 <section id="data-pipeline" class="level1">
 <h1>Data Pipeline</h1>
 <p>The application uses a multi-stage pipeline to convert raw text-based NMEA sentences into a structured, analysis-ready dataset.</p>
 <section id="raw-data-ingestion" class="level2">
 <h2 class="anchored" data-anchor-id="raw-data-ingestion">Raw Data Ingestion</h2>
-<p>The system scans a configured data directory for <code>.txt</code> files containing standard NMEA 0183 sentences. Four sentence types are parsed:</p>
+<p>The system scans a configured data directory for <code>.txt</code> files containing standard NMEA 0183 sentences. Three sentence types are parsed:</p>
 <table class="caption-top table">
 <colgroup>
-<col style="width: 13%">
-<col style="width: 66%">
-<col style="width: 20%">
+<col style="width: 9%">
+<col style="width: 68%">
+<col style="width: 21%">
 </colgroup>
 <thead>
 <tr class="header">
@@ -145,16 +206,11 @@ ul.task-list li input[type="checkbox"] {
 <td><code>parse_rmc_any()</code></td>
 </tr>
 <tr class="even">
-<td><code>$..DBT/DPT</code></td>
-<td>Water depth in meters and feet</td>
-<td><code>parse_depth()</code></td>
-</tr>
-<tr class="odd">
 <td><code>$..VHW</code></td>
 <td>Boat speed through water (STW)</td>
 <td><code>parse_boat_speed()</code></td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td><code>$..MWV</code></td>
 <td>True or apparent wind angle (TWA) and wind speed (TWS), with unit conversion (knots, m/s, km/h)</td>
 <td><code>parse_wind_mwv()</code></td>
@@ -165,14 +221,14 @@ ul.task-list li input[type="checkbox"] {
 </section>
 <section id="processing-and-synchronization" class="level2">
 <h2 class="anchored" data-anchor-id="processing-and-synchronization">Processing and Synchronization</h2>
-<p>Different NMEA sentences are recorded at varying intervals and do not share a common timestamp. The pipeline uses <code>$..RMC</code> sentences as the primary time anchor. The function <code>nearest_sync_by_line_index()</code> aligns depth, wind, and boat speed observations to their nearest RMC record by raw file line number using <code>findInterval()</code>. This approach is efficient and avoids expensive datetime joins across hundreds of thousands of records.</p>
-<p>After synchronization, aggregated values (mean depth, mean STW, mean wind) are joined to the RMC track by <code>datetime_utc</code>.</p>
+<p>Different NMEA sentences are recorded at varying intervals and do not share a common timestamp. GPS fixes typically arrive once per second, while wind and speed instruments may report at different rates. The pipeline uses <code>$..RMC</code> sentences as the primary time anchor. The function <code>nearest_sync_by_line_index()</code> aligns wind and boat speed observations to their nearest RMC record by raw file line number using <code>findInterval()</code>. This approach is efficient and avoids expensive datetime joins across hundreds of thousands of records.</p>
+<p>After synchronization, aggregated values (mean STW, mean wind speed and angle) are joined to the RMC track by <code>datetime_utc</code>, producing a single unified time series with position, boat speed, and wind data on every row.</p>
 </section>
 <section id="data-cleaning" class="level2">
 <h2 class="anchored" data-anchor-id="data-cleaning">Data Cleaning</h2>
 <p>Several cleaning steps are applied to the synchronized track data:</p>
 <ul>
-<li><strong>Speed filtering</strong>: SOG values above 15 knots are excluded, as they indicate GPS noise or sensor errors rather than actual sailing speed.</li>
+<li><strong>Speed filtering</strong>: SOG values above 15 knots are excluded, as they indicate GPS noise or sensor errors rather than actual sailing speed. STW values below 2 knots are excluded from performance averages to filter out erroneous readings during mark roundings or pre-start maneuvering.</li>
 <li><strong>Exclusion zone</strong>: Track points within 1,000 feet of a fixed coordinate (the home dock) are removed to exclude pre-race instrument warmup data.</li>
 <li><strong>Teleport detection</strong>: Isolated GPS points that imply physically impossible jumps (e.g., from UTC date-rollover bugs) are detected by computing implied speed to both temporal neighbors. If a point implies speeds exceeding 30 knots to both its predecessor and successor, it is dropped.</li>
 </ul>
@@ -192,6 +248,10 @@ ul.task-list li input[type="checkbox"] {
 <section id="polar-performance" class="level1">
 <h1>Polar Performance</h1>
 <p>A core feature is comparing observed boat performance against a theoretical reference polar model loaded from <code>Polars.xlsx</code>.</p>
+<section id="what-are-polars" class="level2">
+<h2 class="anchored" data-anchor-id="what-are-polars">What Are Polars?</h2>
+<p>A polar diagram (or polar table) describes a sailboat’s theoretical target speed at every combination of true wind speed (TWS) and true wind angle (TWA). These targets are derived from velocity prediction programs (VPPs) that model the boat’s hull shape, sail plan, and displacement. In practice, polars serve as a benchmark: if the boat is sailing slower than the polar target for the current wind conditions, there is likely room to improve sail trim, steering, or tactical positioning.</p>
+</section>
 <section id="how-polar-binning-works" class="level2">
 <h2 class="anchored" data-anchor-id="how-polar-binning-works">How Polar Binning Works</h2>
 <p>Observed TWS and TWA values are snapped to the nearest reference polar grid point using <code>findInterval()</code> with <code>all.inside = TRUE</code>. This creates discrete bins that match the reference table’s TWS and TWA breakpoints. Observed speeds are then averaged within each bin and compared to the reference value.</p>
@@ -220,8 +280,9 @@ ul.task-list li input[type="checkbox"] {
 <section id="race-calendar-integration" class="level1">
 <h1>Race Calendar Integration</h1>
 <p>The system integrates an external Excel calendar (<code>Race Calendar.xlsx</code>) to label track data with race context.</p>
-<section id="calendar-columns" class="level2">
-<h2 class="anchored" data-anchor-id="calendar-columns">Calendar Columns</h2>
+<section id="calendar-structure" class="level2">
+<h2 class="anchored" data-anchor-id="calendar-structure">Calendar Structure</h2>
+<p>The calendar is organized as a multi-sheet Excel workbook, where each sheet represents a racing season (e.g., “2024-25 Winter”). Within each sheet, rows define individual race events.</p>
 <p>The calendar is expected to have at minimum: <code>race</code>, <code>helm</code>, <code>headsail</code>, <code>start</code>, and <code>end</code>. Optional columns include <code>season</code>, <code>series</code>, <code>place</code>, <code>fleet</code>, and <code>length</code>. Column names are normalized to lowercase with underscores via <code>normalize_excel_names()</code>.</p>
 </section>
 <section id="matching-process" class="level2">
@@ -234,12 +295,18 @@ ul.task-list li input[type="checkbox"] {
 <p>The Shiny application is organized into the following tabs:</p>
 <section id="race-seasons" class="level2">
 <h2 class="anchored" data-anchor-id="race-seasons">Race Seasons</h2>
-<p>A season-level summary of all races in the calendar. The user selects a season from a dropdown, and a table displays each race event with its date, series, place, fleet size, distance, and elapsed time. A TOTAL row at the bottom sums distance and duration. Races with the same name on different dates are listed as separate rows (grouped by race name and start date).</p>
-<p>Clicking any race row navigates directly to the Race Analysis tab for that race.</p>
+<p>A season-level summary of all races in the calendar. The user selects a season and optionally a race series from dropdown filters. An AI-generated narrative provides contextual commentary: when “All” is selected, a program-wide performance narrative is displayed; for a specific season, a season-specific narrative is shown.</p>
+<p>Below the narrative, two summary tables aggregate key statistics:</p>
+<ul>
+<li><strong>Season Summary Table</strong>: One row per season showing race count, average place, average fleet size, total distance, sailing hours, average and max STW, max TWS, and total NMEA data points. When a single season is selected, this table contains one row; when “All” is selected, it shows one row per season.</li>
+<li><strong>Series Summary Table</strong>: One row per race series with the same statistics. When a specific series is selected, this table contains one row; when “All” is selected, it shows one row per series.</li>
+</ul>
+<p>Both summary tables include a footer row with totals (for additive metrics like distance and hours), averages (for Avg Place, Avg Fleet, Avg STW), and maximums (for Max STW, Max TWS).</p>
+<p>Below the summary tables, a detailed race list displays each race event with its date, series, place, fleet size, distance, sailing hours, average and max STW, max TWS, and NMEA data point count. Races with the same name on different dates are listed as separate rows (grouped by race name and start date).</p>
 </section>
 <section id="race-analysis" class="level2">
 <h2 class="anchored" data-anchor-id="race-analysis">Race Analysis</h2>
-<p>Displays detailed analysis for a single race selected from the Race Seasons table. At the top, a summary table shows key metrics:</p>
+<p>Displays detailed analysis for a single race selected via season, series, and race dropdowns. At the top, a summary table shows key metrics:</p>
 <table class="caption-top table">
 <colgroup>
 <col style="width: 50%">
@@ -276,8 +343,9 @@ ul.task-list li input[type="checkbox"] {
 </table>
 <p>Below the summary:</p>
 <ul>
+<li><strong>AI Race Report</strong>: A deterministically generated narrative analyzing the race’s distance, placement, speed, wind conditions, and polar performance in context of the full racing history.</li>
 <li><strong>Leaflet map</strong>: GPS track rendered as polylines, color-coded by day (local date) to distinguish legs of multiday races.</li>
-<li><strong>Speed plot</strong>: Raw SOG and STW traces overlaid with 1-minute moving averages, faceted by day.</li>
+<li><strong>Speed plot</strong>: Raw SOG and STW traces overlaid with 1-minute moving averages.</li>
 <li><strong>Polar tables</strong>: Five sub-tabs as described in the Polar Performance section above.</li>
 </ul>
 </section>
@@ -287,7 +355,7 @@ ul.task-list li input[type="checkbox"] {
 </section>
 <section id="about" class="level2">
 <h2 class="anchored" data-anchor-id="about">About</h2>
-<p>Links to this documentation and the project’s GitHub repository.</p>
+<p>Links to this documentation, the project’s GitHub repository, and data file management controls (password-protected, local-only) for rebuilding or deleting the RDS data files.</p>
 </section>
 </section>
 <section id="deployment" class="level1">
@@ -299,13 +367,56 @@ ul.task-list li input[type="checkbox"] {
 </ul>
 <p>Environment detection checks for standard deployment environment variables (<code>SHINY_PORT</code>, <code>RSCONNECT_SERVER</code>, etc.). The <code>IS_DEPLOYED</code> flag controls whether <code>rebuild_rds_from_raw()</code> is permitted to run.</p>
 </section>
+<section id="the-r-ecosystem" class="level1">
+<h1>The R Ecosystem</h1>
+<section id="r" class="level2">
+<h2 class="anchored" data-anchor-id="r">R</h2>
+<p>R is a free, open-source programming language designed for statistical computing and data analysis. It was created in the early 1990s by Ross Ihaka and Robert Gentleman at the University of Auckland, New Zealand, as an open-source implementation of the S language developed at Bell Laboratories. R is maintained by the R Core Team and distributed through the Comprehensive R Archive Network (CRAN), which hosts over 20,000 contributed packages covering statistics, machine learning, visualization, spatial analysis, and virtually every other quantitative discipline.</p>
+<p>R’s strengths are in data manipulation, statistical modeling, and visualization. Its built-in data frame structure, formula-based modeling syntax, and rich package ecosystem make it a natural choice for projects like Wings Analytics, where raw sensor data must be parsed, cleaned, joined, aggregated, and visualized. The <code>tidyverse</code> family of packages (dplyr, tidyr, ggplot2, readr, and others) provides a consistent grammar for data wrangling that is used extensively throughout this project.</p>
+</section>
+<section id="rstudio" class="level2">
+<h2 class="anchored" data-anchor-id="rstudio">RStudio</h2>
+<p>RStudio is an integrated development environment (IDE) purpose-built for R (and now Python as well). It was first released in 2011 by J.J. Allaire and provides a unified interface combining a code editor, R console, file browser, plot viewer, help system, environment inspector, and package manager. RStudio transformed R from a command-line-centric language into an accessible platform for data science by making the development workflow visual and interactive.</p>
+<p>RStudio is developed by Posit, PBC (formerly RStudio, PBC), which rebranded in 2022 to reflect its expanding support for multilingual data science. Posit maintains both the open-source RStudio Desktop IDE and commercial server products, and is the primary corporate sponsor of many of R’s most widely used packages.</p>
+</section>
+<section id="posit-assistant" class="level2">
+<h2 class="anchored" data-anchor-id="posit-assistant">Posit Assistant</h2>
+<p>Posit Assistant is an AI-powered coding assistant integrated directly into RStudio. It provides context-aware help for R and Python development, including code generation, debugging, statistical guidance, and data analysis support. Posit Assistant can execute code in the user’s active R session, read and write project files, and interact with the workspace — making it a collaborative tool rather than a detached chatbot.</p>
+<p>Wings Analytics was developed collaboratively with Posit Assistant. The AI assistant contributed to NMEA parsing logic, data pipeline design, Shiny UI construction, polar performance calculations, and this documentation. This represents a practical example of AI-assisted development: the domain expertise (sailing, racing tactics, instrument systems) came from the developer, while the assistant accelerated implementation by generating code, suggesting architectural patterns, debugging edge cases, and drafting documentation from technical context.</p>
+</section>
+<section id="shiny" class="level2">
+<h2 class="anchored" data-anchor-id="shiny">Shiny</h2>
+<p>Shiny is an R package that turns R scripts into interactive web applications without requiring any knowledge of HTML, CSS, or JavaScript. Created by Joe Cheng at RStudio (now Posit) and first released in 2012, Shiny lets R users build reactive dashboards and data tools that run in a web browser. The developer defines a user interface (UI) and a server function containing R logic; Shiny handles the communication between the browser and the R process, automatically re-executing code when inputs change.</p>
+<p>Wings Analytics is a Shiny application. The entire platform — interactive maps, filterable tables, polar performance grids, season summaries, and AI-generated race narratives — is built in a single <code>app.R</code> file using standard Shiny patterns. The UI uses the <code>bslib</code> package for modern Bootstrap 5 theming with a custom dark glass-morphism aesthetic.</p>
+</section>
+<section id="github" class="level2">
+<h2 class="anchored" data-anchor-id="github">GitHub</h2>
+<p>The Wings Analytics source code is maintained in a Git repository hosted on GitHub. GitHub is a cloud-based platform for version control and collaboration built on top of Git, the distributed version control system created by Linus Torvalds in 2005. GitHub provides a web interface for browsing code, tracking changes, managing issues, and collaborating with other developers. It is the dominant platform for open-source software and is widely used for private projects as well.</p>
+<p>For Wings Analytics, GitHub serves as the canonical code repository — every change to the application, data pipeline, and documentation is tracked with a full history of commits. RStudio has built-in Git integration, making it straightforward to commit, push, and pull changes directly from the IDE. The repository also acts as a backup: if the development machine is lost, the entire project can be restored from GitHub. A link to the Wings Analytics GitHub repository is available in the app’s About tab.</p>
+<section id="deployment-at-near-zero-cost" class="level3">
+<h3 class="anchored" data-anchor-id="deployment-at-near-zero-cost">Deployment at Near-Zero Cost</h3>
+<p>One of Shiny’s most compelling features for independent projects is its deployment model. Posit offers <strong>shinyapps.io</strong>, a cloud hosting platform where Shiny applications can be deployed directly from RStudio with a single command (<code>rsconnect::deployApp()</code>). The free tier of shinyapps.io provides 25 active hours per month and up to 5 applications — more than sufficient for a personal analytics tool like Wings Analytics that is accessed intermittently by a small number of users.</p>
+<p>This means the entire Wings Analytics platform — from raw NMEA data to interactive web application — runs on a stack that costs essentially nothing:</p>
+<ul>
+<li><strong>R</strong>: Free and open-source.</li>
+<li><strong>RStudio Desktop</strong>: Free and open-source.</li>
+<li><strong>All R packages</strong> (Shiny, leaflet, DT, tidyverse, etc.): Free and open-source.</li>
+<li><strong>shinyapps.io hosting</strong>: Free tier available.</li>
+<li><strong>OpenCPN</strong>: Free and open-source.</li>
+</ul>
+<p>The only costs in the pipeline are hardware (the onboard laptop and Yacht Devices gateway) and the Starlink internet subscription, both of which serve broader purposes beyond analytics. The result is a fully functional, publicly accessible sailing performance platform built and hosted for virtually no incremental cost.</p>
+</section>
+</section>
+</section>
 <section id="technical-notes" class="level1">
 <h1>Technical Notes</h1>
 <ul>
-<li>All times are stored internally as UTC (<code>POSIXct</code>) and converted to Eastern time (<code>America/New_York</code>) for display and calendar matching via <code>lubridate::with_tz()</code>.</li>
-<li>The <code>geosphere</code> package is used for Haversine distance calculations (exclusion zone filtering and teleport detection).</li>
-<li>DT (DataTables) is used for all interactive tables, with custom JavaScript footer callbacks for computing column averages in the polar performance tables.</li>
-<li>The app uses a dark theme implemented via inline CSS, with a glass-morphism card aesthetic.</li>
+<li><strong>Timezone handling</strong>: All times are stored internally as UTC (<code>POSIXct</code>) and converted to Eastern time (<code>America/New_York</code>) for display and calendar matching via <code>lubridate::with_tz()</code>.</li>
+<li><strong>Geospatial calculations</strong>: The <code>geosphere</code> package provides Haversine distance calculations for exclusion zone filtering and teleport detection.</li>
+<li><strong>Interactive tables</strong>: DT (DataTables) powers all interactive tables, with custom JavaScript footer callbacks for computing column sums, averages, and maximums.</li>
+<li><strong>Mapping</strong>: The <code>leaflet</code> package renders GPS tracks as interactive polylines on OpenStreetMap tiles.</li>
+<li><strong>Visual design</strong>: The app uses a dark theme implemented via inline CSS, with a glass-morphism card aesthetic and responsive layout.</li>
+<li><strong>AI narratives</strong>: Race and season narratives are deterministically generated from performance data and cached in <code>race_narratives.rds</code>. They use a hash-based quote selection mechanism to ensure the same race always produces the same narrative without randomness.</li>
 </ul>
 </section>
 

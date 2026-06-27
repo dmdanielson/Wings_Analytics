@@ -1,7 +1,7 @@
 # app.R
 # Wings Analytics – consolidated time-series, fixed UTC→local handling
 #
-# Behavior:
+# Behaviors:
 # - LOCAL: if track_data.rds is missing, rebuild it from *.txt + Race Calendar.xlsx + Polars.xlsx
 # - SHINYAPPS (deployed): NEVER rebuild; must have track_data.rds deployed alongside app.R
 #
@@ -69,14 +69,6 @@ empty_rmc_tbl <- function() {
     cog_deg     = numeric()
   )
 }
-empty_depth_tbl <- function() {
-  tibble(
-    line_index = integer(),
-    sentence  = character(),
-    depth_m   = numeric(),
-    depth_ft  = numeric()
-  )
-}
 empty_boat_tbl <- function() {
   tibble(
     line_index       = integer(),
@@ -132,26 +124,6 @@ parse_rmc_any <- function(lines) {
       datetime_utc  = suppressWarnings(ymd_hms(paste(date_fmt, time_fmt), tz = "UTC"))
     ) |>
     select(line_index, datetime_utc, sentence, latitude, longitude, sog_knots, cog_deg)
-}
-
-parse_depth <- function(lines) {
-  idxs <- which(grepl("^\\$(..DBT|..DPT)", lines))
-  if (!length(idxs)) return(empty_depth_tbl())
-  
-  depth_lines <- lines[idxs]
-  tibble(raw = depth_lines, line_index = idxs) |>
-    separate(raw, into = paste0("field", 1:10), sep = ",", fill = "right") |>
-    mutate(
-      sentence = field1,
-      depth_m  = case_when(
-        grepl("DBT", sentence) ~ suppressWarnings(as.numeric(field3)),
-        grepl("DPT", sentence) ~ suppressWarnings(as.numeric(field2)),
-        TRUE                   ~ NA_real_
-      )
-    ) |>
-    filter(!is.na(depth_m)) |>
-    mutate(depth_ft = depth_m * 3.28084) |>
-    select(line_index, sentence, depth_m, depth_ft)
 }
 
 parse_boat_speed <- function(lines) {
@@ -647,8 +619,9 @@ generate_performance_narrative <- function(race_calendar, track_data) {
   paragraphs <- c(paragraphs,
     paste0("Across ", n_seasons, " seasons and ", n_total_races, " races spanning roughly ",
            span_months, " months, Wings has covered ", round(total_nm, 1),
-           " nautical miles of competitive racing. As John Masefield wrote, \u201cI must go down to the seas again, to the lonely sea and the sky\u201d \u2014 and Wings has answered that call emphatically, logging race after race from ",
-           format(first_race, "%B %Y"), " through ", format(last_race, "%B %Y"), "."))
+           " nautical miles of competitive racing from ",
+           format(first_race, "%B %Y"), " through ", format(last_race, "%B %Y"),
+           ". These early seasons are about building experience \u2014 learning the boat, learning the crew, and learning the water. As Arthur Ashe put it, \u201cStart where you are. Use what you have. Do what you can.\u201d The performance chapter comes next; the foundation is being laid now."))
 
   # ---- Paragraph 2: Placement trajectory across seasons ----
   place_num_all <- suppressWarnings(as.numeric(race_calendar$place))
@@ -814,7 +787,7 @@ generate_performance_narrative <- function(race_calendar, track_data) {
   # ---- Closing ----
   paragraphs <- c(paragraphs,
     paste0("From the first starting gun to the latest finish line, Wings\u2019 journey across ", n_seasons,
-           " seasons tells a story written in wake and wind. As Mark Twain counseled, \u201cSail away from the safe harbor. Explore. Dream. Discover.\u201d Wings has taken that advice to heart \u2014 and the data proves it."))
+           " seasons tells a story of a crew investing in experience before chasing trophies. Every race sharpens the instincts, every mile deepens the understanding. As Mark Twain counseled, \u201cSail away from the safe harbor. Explore. Dream. Discover.\u201d The exploration phase is well underway \u2014 and the data is building the roadmap for what comes next."))
 
   paste(paragraphs, collapse = "\n\n")
 }
@@ -884,7 +857,6 @@ build_all_narratives <- function(data_rds) {
 rebuild_rds_from_raw <- function() {
   raw_lines_init <- read_all_txt()
   rmc_init   <- parse_rmc_any(raw_lines_init)
-  depth_init <- parse_depth(raw_lines_init)
   boat_init  <- parse_boat_speed(raw_lines_init)
   wind_init  <- parse_wind_mwv(raw_lines_init)
   
@@ -977,17 +949,8 @@ rebuild_rds_from_raw <- function() {
       sentence, latitude, longitude, sog_knots, cog_deg
     )
   
-  depth_sync <- nearest_sync_by_line_index(depth_init, track_all_init)
   boat_sync  <- nearest_sync_by_line_index(boat_init,  track_all_init)
   wind_sync  <- nearest_sync_by_line_index(wind_init,  track_all_init)
-  
-  depth_agg <- depth_sync |>
-    group_by(datetime_utc) |>
-    summarise(
-      depth_m  = mean(depth_m,  na.rm = TRUE),
-      depth_ft = mean(depth_ft, na.rm = TRUE),
-      .groups  = "drop"
-    )
   
   stw_agg <- boat_sync |>
     group_by(datetime_utc) |>
@@ -1007,8 +970,7 @@ rebuild_rds_from_raw <- function() {
   
   track_all_init <- track_all_init |>
     left_join(stw_agg,   by = "datetime_utc") |>
-    left_join(wind_agg,  by = "datetime_utc") |>
-    left_join(depth_agg, by = "datetime_utc")
+    left_join(wind_agg,  by = "datetime_utc")
   
   # ---------- POLARS ----------
   polar_ref_init <- if (file.exists(polar_path)) readxl::read_excel(polar_path) else tibble()
@@ -1369,6 +1331,13 @@ ui <- fluidPage(
         border-bottom: 1px solid rgba(255,255,255,0.14) !important;
       }
       table.dataTable tbody td { color: rgba(232,237,246,0.90) !important; }
+      table.dataTable tfoot th {
+        font-weight: 700 !important;
+        color: rgba(100,180,255,1.0) !important;
+        background: rgba(100,180,255,0.08) !important;
+        border-top: 2px solid rgba(100,180,255,0.40) !important;
+        font-size: 14px !important;
+      }
       .dataTables_wrapper .dataTables_info { color: rgba(232,237,246,0.65) !important; }
 
 /* Leaflet border polish */
@@ -1637,6 +1606,8 @@ a.social-yt-link:hover {
         uiOutput("season_narrative_card"),
         DTOutput("season_summary_table"),
         br(),
+        DTOutput("season_series_summary_table"),
+        br(),
         DTOutput("season_table")
       )
     ),
@@ -1743,6 +1714,20 @@ a.social-yt-link:hover {
           class  = "social-yt-link",
           HTML('<svg width="18" height="13" viewBox="0 0 159 110" fill="none"><path d="M154 17.5c-1.8-6.7-7.1-12-13.8-13.8C128 0 79.5 0 79.5 0S31 0 18.8 3.7C12.1 5.5 6.8 10.8 5 17.5 1.2 29.7 1.2 55 1.2 55s0 25.3 3.8 37.5c1.8 6.7 7.1 12 13.8 13.8C31 110 79.5 110 79.5 110s48.5 0 60.7-3.7c6.7-1.8 12-7.1 13.8-13.8 3.8-12.2 3.8-37.5 3.8-37.5s0-25.3-3.8-37.5z" fill="#FF0000"/><path d="M64 78.8V31.2L105 55 64 78.8z" fill="#FFF"/></svg>'),
           "Wings Mexico 2026"
+        ),
+        tags$a(
+          href   = "https://youtu.be/av06m8_RlKQ",
+          target = "_blank",
+          class  = "social-yt-link",
+          HTML('<svg width="18" height="13" viewBox="0 0 159 110" fill="none"><path d="M154 17.5c-1.8-6.7-7.1-12-13.8-13.8C128 0 79.5 0 79.5 0S31 0 18.8 3.7C12.1 5.5 6.8 10.8 5 17.5 1.2 29.7 1.2 55 1.2 55s0 25.3 3.8 37.5c1.8 6.7 7.1 12 13.8 13.8C31 110 79.5 110 79.5 110s48.5 0 60.7-3.7c6.7-1.8 12-7.1 13.8-13.8 3.8-12.2 3.8-37.5 3.8-37.5s0-25.3-3.8-37.5z" fill="#FF0000"/><path d="M64 78.8V31.2L105 55 64 78.8z" fill="#FFF"/></svg>'),
+          "Wings - Bone Island Regatta"
+        ),
+        tags$a(
+          href   = "https://youtu.be/jpdw4J9VsK4",
+          target = "_blank",
+          class  = "social-yt-link",
+          HTML('<svg width="18" height="13" viewBox="0 0 159 110" fill="none"><path d="M154 17.5c-1.8-6.7-7.1-12-13.8-13.8C128 0 79.5 0 79.5 0S31 0 18.8 3.7C12.1 5.5 6.8 10.8 5 17.5 1.2 29.7 1.2 55 1.2 55s0 25.3 3.8 37.5c1.8 6.7 7.1 12 13.8 13.8C31 110 79.5 110 79.5 110s48.5 0 60.7-3.7c6.7-1.8 12-7.1 13.8-13.8 3.8-12.2 3.8-37.5 3.8-37.5s0-25.3-3.8-37.5z" fill="#FF0000"/><path d="M64 78.8V31.2L105 55 64 78.8z" fill="#FFF"/></svg>'),
+          "Wings Key West Return"
         )
       ),
       
@@ -1769,31 +1754,36 @@ a.social-yt-link:hover {
     tabPanel(
       "About",
       br(),
+      # ---- Documentation ----
       div(
-        style = "
-      background: rgba(255,255,255,0.04);
-      border: 1px solid rgba(255,255,255,0.10);
-      border-radius: 16px;
-      padding: 18px;
-      box-shadow: 0 10px 28px rgba(0,0,0,0.25);
-      max-width: 760px;
-    ",
-        h4("Documentation"),
+        class = "social-section",
+        div(
+          class = "social-section-header",
+          HTML('<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#e8edf6" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>'),
+          h4("Documentation")
+        ),
         tags$p(
           "Access the full technical documentation for Wings Analytics, including data pipeline details and performance metric explanations.",
-          style = "color: rgba(232,237,246,0.75); margin-bottom: 14px;"
+          style = "color: rgba(232,237,246,0.60); font-size: 14px; margin-bottom: 14px;"
         ),
         tags$a(
           href   = "wings_analytics_documentation.html",
           target = "_blank",
           class  = "wa-shop-btn",
           "View Documentation"
+        )
+      ),
+      # ---- Project Source ----
+      div(
+        class = "social-section",
+        div(
+          class = "social-section-header",
+          HTML('<svg width="26" height="26" viewBox="0 0 24 24" fill="#e8edf6"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>'),
+          h4("Project Source")
         ),
-        tags$hr(style = "border-color: rgba(255,255,255,0.10); margin: 22px 0;"),
-        h4("Project Source"),
         tags$p(
           "View the source code and contribute to the project on GitHub.",
-          style = "color: rgba(232,237,246,0.75); margin-bottom: 14px;"
+          style = "color: rgba(232,237,246,0.60); font-size: 14px; margin-bottom: 14px;"
         ),
         tags$a(
           href   = "https://github.com/dmdanielson/Wings_Analytics",
@@ -1804,11 +1794,15 @@ a.social-yt-link:hover {
       ),
       # ---- File Management ----
       div(
-        class = "file-mgmt-section",
-        h4("Data File Management"),
+        class = "social-section",
+        div(
+          class = "social-section-header",
+          HTML('<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#e8edf6" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>'),
+          h4("Data File Management")
+        ),
         tags$p(
           "Manage the data files used by Wings Analytics. These operations are only available when running locally.",
-          style = "color: rgba(232,237,246,0.65); font-size: 13px; margin-bottom: 16px;"
+          style = "color: rgba(232,237,246,0.60); font-size: 14px; margin-bottom: 16px;"
         ),
         passwordInput("file_mgmt_password", "Enter password to unlock:",
                       placeholder = "Password"),
@@ -2048,6 +2042,7 @@ server <- function(input, output, session) {
       mutate(race_date = as.Date(start)) |>
       group_by(race, race_date) |>
       summarise(
+        season = first(season),
         series = first(series),
         place  = first(place),
         fleet  = first(fleet),
@@ -2065,16 +2060,41 @@ server <- function(input, output, session) {
       rowwise() |>
       mutate(
         # Count track data points within each race's time window
-        nmea_count = sum(
+        nmea_idx = list(which(
           track_with_race$race == race &
           track_with_race$datetime_local >= start &
           track_with_race$datetime_local <= end
-        )
+        )),
+        nmea_count = length(nmea_idx),
+        avg_stw = if (length(nmea_idx) == 0) NA_real_
+                  else {
+                    stw_vals <- track_with_race$stw_knots[nmea_idx]
+                    stw_vals <- stw_vals[!is.na(stw_vals) & stw_vals >= 2]
+                    if (length(stw_vals) == 0) NA_real_ else mean(stw_vals)
+                  },
+        max_stw = if (length(nmea_idx) == 0) NA_real_
+                  else {
+                    stw_vals <- track_with_race$stw_knots[nmea_idx]
+                    stw_vals <- stw_vals[!is.na(stw_vals) & stw_vals >= 2]
+                    if (length(stw_vals) == 0) NA_real_ else max(stw_vals)
+                  },
+        max_tws = if (length(nmea_idx) == 0) NA_real_
+                  else {
+                    tws_vals <- track_with_race$tws_knots[nmea_idx]
+                    tws_vals <- tws_vals[!is.na(tws_vals)]
+                    if (length(tws_vals) == 0) NA_real_ else max(tws_vals)
+                  }
       ) |>
-      ungroup()
+      ungroup() |>
+      mutate(
+        avg_stw = ifelse(is.nan(avg_stw), NA_real_, avg_stw),
+        max_stw = ifelse(is.infinite(max_stw), NA_real_, max_stw),
+        max_tws = ifelse(is.infinite(max_tws), NA_real_, max_tws)
+      ) |>
+      select(-nmea_idx)
   })
   
-  # Summary row displayed above the race list
+  # Season summary table: one row per season
   output$season_summary_table <- renderDT({
     cal_summary <- season_races()
     if (nrow(cal_summary) == 0) {
@@ -2082,21 +2102,146 @@ server <- function(input, output, session) {
                        options = list(dom = "t"), rownames = FALSE))
     }
     
-    place_num <- suppressWarnings(as.numeric(cal_summary$place))
-    fleet_num <- suppressWarnings(as.numeric(cal_summary$fleet))
+    summary_df <- cal_summary |>
+      group_by(Season = season) |>
+      summarise(
+        `# Races`   = n(),
+        `Avg Place` = {pn <- suppressWarnings(as.numeric(place)); if (all(is.na(pn))) NA_real_ else round(mean(pn, na.rm = TRUE), 1)},
+        `Avg Fleet` = {fn <- suppressWarnings(as.numeric(fleet)); if (all(is.na(fn))) NA_real_ else round(mean(fn, na.rm = TRUE), 1)},
+        Length      = round(sum(length, na.rm = TRUE), 1),
+        Sail_Hrs    = round(sum(duration_hrs, na.rm = TRUE), 1),
+        `Avg STW`   = if (all(is.na(avg_stw))) NA_real_ else round(mean(avg_stw, na.rm = TRUE), 1),
+        `Max STW`   = if (all(is.na(max_stw))) NA_real_ else round(max(max_stw, na.rm = TRUE), 1),
+        `Max TWS`   = if (all(is.na(max_tws))) NA_real_ else round(max(max_tws, na.rm = TRUE), 1),
+        `NMEA Pts`  = sum(nmea_count),
+        .groups = "drop"
+      )
     
-    summary_df <- tibble::tibble(
-      `# Races`       = nrow(cal_summary),
-      `Avg Place`     = if (all(is.na(place_num))) NA_real_ else round(mean(place_num, na.rm = TRUE), 1),
-      `Avg Fleet`     = if (all(is.na(fleet_num))) NA_real_ else round(mean(fleet_num, na.rm = TRUE), 1),
-      `Total Length`  = round(sum(cal_summary$length, na.rm = TRUE), 1),
-      `Total Duration (hrs)` = round(sum(cal_summary$duration_hrs, na.rm = TRUE), 2),
-      `Total NMEA Pts` = format(sum(cal_summary$nmea_count), big.mark = ",")
-    )
+    avg_cols <- c("Avg Place", "Avg Fleet", "Avg STW")
+    max_cols <- c("Max STW", "Max TWS")
+    
+    sketch <- htmltools::withTags(table(
+      class = "display",
+      thead(tr(lapply(names(summary_df), th))),
+      tfoot(tr(lapply(names(summary_df), th)))
+    ))
     
     datatable(summary_df,
-              options = list(dom = "t", ordering = FALSE),
-              rownames = FALSE)
+              container = sketch,
+              options = list(
+                dom = "t", ordering = FALSE,
+                columnDefs = list(
+                  list(className = "dt-right", targets = ncol(summary_df) - 1)
+                ),
+                footerCallback = DT::JS("
+                  function(row, data, start, end, display) {
+                    var api = this.api();
+                    var ncols = api.columns().count();
+                    var avgCols = ['Avg Place', 'Avg Fleet', 'Avg STW'];
+                    var maxCols = ['Max STW', 'Max TWS'];
+                    $(api.column(0).footer()).html('Total');
+                    for (var col = 1; col < ncols; col++) {
+                      var header = $(api.column(col).header()).text();
+                      var vals = [];
+                      api.column(col, {page:'current'}).data().each(function(v) {
+                        var x = parseFloat(String(v).replace(/,/g,''));
+                        if (!isNaN(x)) vals.push(x);
+                      });
+                      if (avgCols.indexOf(header) >= 0) {
+                        $(api.column(col).footer()).html(vals.length ? (vals.reduce(function(a,b){return a+b;},0)/vals.length).toFixed(1) : '');
+                      } else if (maxCols.indexOf(header) >= 0) {
+                        $(api.column(col).footer()).html(vals.length ? Math.max.apply(null, vals).toFixed(1) : '');
+                      } else if (header === 'NMEA Pts') {
+                        var sum = vals.reduce(function(a,b){return a+b;},0);
+                        $(api.column(col).footer()).html(vals.length ? sum.toLocaleString() : '');
+                      } else if (header === '# Races') {
+                        var sum = vals.reduce(function(a,b){return a+b;},0);
+                        $(api.column(col).footer()).html(vals.length ? sum.toFixed(0) : '');
+                      } else {
+                        var sum = vals.reduce(function(a,b){return a+b;},0);
+                        $(api.column(col).footer()).html(vals.length ? sum.toFixed(1) : '');
+                      }
+                    }
+                  }
+                ")
+              ),
+              rownames = FALSE) |>
+      formatRound(columns = c("Avg Place", "Avg Fleet", "Length", "Sail_Hrs", "Avg STW", "Max STW", "Max TWS"), digits = 1) |>
+      formatRound(columns = "NMEA Pts", digits = 0)
+  })
+  
+  # Series summary table: one row per series
+  output$season_series_summary_table <- renderDT({
+    cal_summary <- season_races()
+    if (nrow(cal_summary) == 0) {
+      return(datatable(tibble::tibble(Message = "No races found."),
+                       options = list(dom = "t"), rownames = FALSE))
+    }
+    
+    summary_df <- cal_summary |>
+      mutate(series_label = ifelse(is.na(series) | series == "", "(No Series)", series)) |>
+      group_by(Series = series_label) |>
+      summarise(
+        `# Races`   = n(),
+        `Avg Place` = {pn <- suppressWarnings(as.numeric(place)); if (all(is.na(pn))) NA_real_ else round(mean(pn, na.rm = TRUE), 1)},
+        `Avg Fleet` = {fn <- suppressWarnings(as.numeric(fleet)); if (all(is.na(fn))) NA_real_ else round(mean(fn, na.rm = TRUE), 1)},
+        Length      = round(sum(length, na.rm = TRUE), 1),
+        Sail_Hrs    = round(sum(duration_hrs, na.rm = TRUE), 1),
+        `Avg STW`   = if (all(is.na(avg_stw))) NA_real_ else round(mean(avg_stw, na.rm = TRUE), 1),
+        `Max STW`   = if (all(is.na(max_stw))) NA_real_ else round(max(max_stw, na.rm = TRUE), 1),
+        `Max TWS`   = if (all(is.na(max_tws))) NA_real_ else round(max(max_tws, na.rm = TRUE), 1),
+        `NMEA Pts`  = sum(nmea_count),
+        .groups = "drop"
+      )
+    
+    sketch <- htmltools::withTags(table(
+      class = "display",
+      thead(tr(lapply(names(summary_df), th))),
+      tfoot(tr(lapply(names(summary_df), th)))
+    ))
+    
+    datatable(summary_df,
+              container = sketch,
+              options = list(
+                dom = "t", ordering = FALSE,
+                columnDefs = list(
+                  list(className = "dt-right", targets = ncol(summary_df) - 1)
+                ),
+                footerCallback = DT::JS("
+                  function(row, data, start, end, display) {
+                    var api = this.api();
+                    var ncols = api.columns().count();
+                    var avgCols = ['Avg Place', 'Avg Fleet', 'Avg STW'];
+                    var maxCols = ['Max STW', 'Max TWS'];
+                    $(api.column(0).footer()).html('Total');
+                    for (var col = 1; col < ncols; col++) {
+                      var header = $(api.column(col).header()).text();
+                      var vals = [];
+                      api.column(col, {page:'current'}).data().each(function(v) {
+                        var x = parseFloat(String(v).replace(/,/g,''));
+                        if (!isNaN(x)) vals.push(x);
+                      });
+                      if (avgCols.indexOf(header) >= 0) {
+                        $(api.column(col).footer()).html(vals.length ? (vals.reduce(function(a,b){return a+b;},0)/vals.length).toFixed(1) : '');
+                      } else if (maxCols.indexOf(header) >= 0) {
+                        $(api.column(col).footer()).html(vals.length ? Math.max.apply(null, vals).toFixed(1) : '');
+                      } else if (header === 'NMEA Pts') {
+                        var sum = vals.reduce(function(a,b){return a+b;},0);
+                        $(api.column(col).footer()).html(vals.length ? sum.toLocaleString() : '');
+                      } else if (header === '# Races') {
+                        var sum = vals.reduce(function(a,b){return a+b;},0);
+                        $(api.column(col).footer()).html(vals.length ? sum.toFixed(0) : '');
+                      } else {
+                        var sum = vals.reduce(function(a,b){return a+b;},0);
+                        $(api.column(col).footer()).html(vals.length ? sum.toFixed(1) : '');
+                      }
+                    }
+                  }
+                ")
+              ),
+              rownames = FALSE) |>
+      formatRound(columns = c("Avg Place", "Avg Fleet", "Length", "Sail_Hrs", "Avg STW", "Max STW", "Max TWS"), digits = 1) |>
+      formatRound(columns = "NMEA Pts", digits = 0)
   })
   
   output$season_table <- renderDT({
@@ -2108,30 +2253,75 @@ server <- function(input, output, session) {
     
     res <- cal_summary |>
       transmute(
-        `#`          = row_number(),
-        Date         = format(as.Date(start), "%m/%d/%Y"),
-        Series       = ifelse(is.na(series) | series == "", "", series),
-        Race         = race,
-        Place        = ifelse(is.na(place) | place == "", "", place),
-        Fleet        = ifelse(is.na(fleet), "n/a", as.character(as.integer(fleet))),
-        Length       = ifelse(is.na(length), "", formatC(length, format = "f", digits = 2)),
-        Duration_Hrs = ifelse(is.na(duration_hrs), "", formatC(duration_hrs, format = "f", digits = 2)),
-        `NMEA Pts`   = format(nmea_count, big.mark = ",")
+        `#`        = row_number(),
+        Date       = format(as.Date(start), "%m/%d/%Y"),
+        Series     = ifelse(is.na(series) | series == "", "", series),
+        Race       = race,
+        Place      = ifelse(is.na(place) | place == "", "", place),
+        Fleet      = ifelse(is.na(fleet), "", as.character(as.integer(fleet))),
+        Length     = ifelse(is.na(length), NA_real_, round(length, 1)),
+        Sail_Hrs   = ifelse(is.na(duration_hrs), NA_real_, round(duration_hrs, 1)),
+        `Avg STW`  = ifelse(is.na(avg_stw), NA_real_, round(avg_stw, 1)),
+        `Max STW`  = ifelse(is.na(max_stw), NA_real_, round(max_stw, 1)),
+        `Max TWS`  = ifelse(is.na(max_tws), NA_real_, round(max_tws, 1)),
+        `NMEA Pts` = nmea_count
       )
     
-    # Columns: #(0), Date(1), Series(2), Race(3), Place(4), Fleet(5), Length(6), Duration_Hrs(7), NMEA Data(8)
+    # right-align: Place(4), Fleet(5), Length(6), Sail_Hrs(7), Avg STW(8), Max STW(9), Max TWS(10), NMEA Pts(11)
+    sketch <- htmltools::withTags(table(
+      class = "display",
+      thead(tr(lapply(names(res), th))),
+      tfoot(tr(lapply(names(res), th)))
+    ))
+    
     datatable(
       res,
+      container = sketch,
       selection = "none",
       options = list(
-        dom = 't',
+        dom = "t",
         pageLength = 100,
         columnDefs = list(
-          list(className = "dt-right", targets = c(4, 5, 6, 7, 8))
-        )
+          list(className = "dt-right", targets = c(4, 5, 6, 7, 8, 9, 10, 11))
+        ),
+        footerCallback = DT::JS("
+          function(row, data, start, end, display) {
+            var api = this.api();
+            var ncols = api.columns().count();
+            var avgCols = ['Avg STW'];
+            var maxCols = ['Max STW', 'Max TWS'];
+            $(api.column(0).footer()).html('');
+            $(api.column(1).footer()).html('');
+            $(api.column(2).footer()).html('');
+            $(api.column(3).footer()).html('Total');
+            $(api.column(4).footer()).html('');
+            $(api.column(5).footer()).html('');
+            for (var col = 6; col < ncols; col++) {
+              var header = $(api.column(col).header()).text();
+              var vals = [];
+              api.column(col, {page:'current'}).data().each(function(v) {
+                var x = parseFloat(String(v).replace(/,/g,''));
+                if (!isNaN(x)) vals.push(x);
+              });
+              if (avgCols.indexOf(header) >= 0) {
+                $(api.column(col).footer()).html(vals.length ? (vals.reduce(function(a,b){return a+b;},0)/vals.length).toFixed(1) : '');
+              } else if (maxCols.indexOf(header) >= 0) {
+                $(api.column(col).footer()).html(vals.length ? Math.max.apply(null, vals).toFixed(1) : '');
+              } else if (header === 'NMEA Pts') {
+                var sum = vals.reduce(function(a,b){return a+b;},0);
+                $(api.column(col).footer()).html(vals.length ? sum.toLocaleString() : '');
+              } else {
+                var sum = vals.reduce(function(a,b){return a+b;},0);
+                $(api.column(col).footer()).html(vals.length ? sum.toFixed(1) : '');
+              }
+            }
+          }
+        ")
       ),
       rownames = FALSE
-    )
+    ) |>
+      formatRound(columns = c("Length", "Sail_Hrs", "Avg STW", "Max STW", "Max TWS"), digits = 1) |>
+      formatRound(columns = "NMEA Pts", digits = 0)
   })
   
   # AI Race Season Report
