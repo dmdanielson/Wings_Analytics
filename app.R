@@ -382,14 +382,30 @@ generate_race_narrative <- function(race_row, completed_races) {
     }
   }
 
-  if (!is.na(race_row$polar_perf_sog) && !is.nan(race_row$polar_perf_sog)) {
-    pp <- round(race_row$polar_perf_sog, 2)
-    ptxt <- if (pp > 0.3) {
-      paste0("Polar performance clocked in at +", pp,
-             " knots above target \u2014 Wings was sailing faster than the designers thought possible. Either the crew is that good, or the polars need a firmware update. We\u2019ll claim the former.")
-    } else if (pp > 0) {
+  if (!is.na(race_row$polar_perf_stw) && !is.nan(race_row$polar_perf_stw)) {
+    pp <- round(race_row$polar_perf_stw, 2)
+    # Determine if this is a recent season (2025+) vs older
+    season_start_yr <- suppressWarnings(as.integer(substr(race_row$season, 1, 4)))
+    is_recent <- !is.na(season_start_yr) && season_start_yr >= 2025
+
+    ptxt <- if (pp > 0.3 && !is_recent) {
+      paste0("Polar performance registered at +", pp,
+             " knots above target. Given that the instruments were still being dialed in during this period, ",
+             "this likely reflects a speed sensor calibration issue rather than genuine over-performance. ",
+             "Early-season instrument readings should be taken with a grain of sea salt.")
+    } else if (pp > 0 && !is_recent) {
       paste0("Polar performance was +", pp,
-             " knots above target \u2014 the crew squeezed out a little extra. As FDR said, \u201cwe must set sail, not tie at anchor\u201d \u2014 and Wings was decidedly untied.")
+             " knots above target. In the early days of Wings\u2019 instrumentation, ",
+             "positive polar numbers often pointed to uncalibrated speed sensors rather than superhuman sailing. ",
+             "The polars themselves are sound \u2014 the paddle wheel, less so.")
+    } else if (pp > 0.3 && is_recent) {
+      paste0("Polar performance clocked in at +", pp,
+             " knots above target \u2014 with properly calibrated instruments, this is a genuinely impressive result. ",
+             "Wings was sailing faster than the polars predicted, and the crew deserves the credit.")
+    } else if (pp > 0 && is_recent) {
+      paste0("Polar performance was +", pp,
+             " knots above target \u2014 a solid result now that the instruments are well-calibrated. ",
+             "The crew squeezed out a little extra from the boat.")
     } else if (pp > -0.3) {
       paste0("Polar performance of ", pp,
              " knots \u2014 just a whisker below target. Close enough that the polars aren\u2019t losing sleep over it.")
@@ -459,8 +475,12 @@ generate_race_narrative <- function(race_row, completed_races) {
 
 # ---------- SEASON NARRATIVE GENERATOR ----------
 generate_season_narrative <- function(season_name, season_cal, track_data) {
-  n_races <- nrow(season_cal)
-  if (n_races == 0) return(paste0("No races found for the ", season_name, " season. The harbor was apparently too comfortable."))
+  if (nrow(season_cal) == 0) return(paste0("No races found for the ", season_name, " season. The harbor was apparently too comfortable."))
+  # Count distinct race events (group multi-day races into one)
+  n_races <- season_cal |>
+    mutate(race_date = as.Date(start)) |>
+    distinct(race, race_date) |>
+    nrow()
 
   # Season-level maritime quotes
   season_quotes <- c(
@@ -573,19 +593,32 @@ generate_season_narrative <- function(season_name, season_cal, track_data) {
                            round(avg_tws, 1), " knots. ", wind_humor))
       }
 
-      avg_polar_sog <- mean(matched_track$Polar_Perf_SOG, na.rm = TRUE)
-      if (!is.nan(avg_polar_sog)) {
-        pp_txt <- if (avg_polar_sog > 0.2)
-          paste0("At +", round(avg_polar_sog, 2),
-                 " knots above polar targets on average, Wings was routinely outrunning her own design specs. The naval architect would be impressed \u2014 or nervous.")
-        else if (avg_polar_sog > 0)
-          paste0("At +", round(avg_polar_sog, 2),
-                 " knots above polar targets, Wings was edging past her theoretical ceiling. Every fraction of a knot earned the hard way.")
-        else if (avg_polar_sog > -0.3)
-          paste0("At ", round(avg_polar_sog, 2),
+      avg_polar_stw <- mean(matched_track$Polar_Perf_STW, na.rm = TRUE)
+      if (!is.nan(avg_polar_stw)) {
+        season_start_yr <- suppressWarnings(as.integer(substr(season_name, 1, 4)))
+        is_recent <- !is.na(season_start_yr) && season_start_yr >= 2025
+
+        pp_txt <- if (avg_polar_stw > 0.2 && !is_recent)
+          paste0("At +", round(avg_polar_stw, 2),
+                 " knots above polar targets on average \u2014 however, instrument calibration during this earlier season was still being refined. ",
+                 "Positive polar numbers from this period likely reflect speed sensor inaccuracies rather than genuine over-performance.")
+        else if (avg_polar_stw > 0 && !is_recent)
+          paste0("At +", round(avg_polar_stw, 2),
+                 " knots above polar targets \u2014 though in this earlier season the speed instruments were not yet properly calibrated, ",
+                 "so the true performance was likely closer to (or below) target.")
+        else if (avg_polar_stw > 0.2 && is_recent)
+          paste0("At +", round(avg_polar_stw, 2),
+                 " knots above polar targets on average, Wings was genuinely outperforming her design specs this season. ",
+                 "With properly calibrated instruments, this is a result the crew can take real pride in.")
+        else if (avg_polar_stw > 0 && is_recent)
+          paste0("At +", round(avg_polar_stw, 2),
+                 " knots above polar targets with well-calibrated instruments, Wings was edging past her theoretical ceiling. ",
+                 "Every fraction of a knot earned the hard way.")
+        else if (avg_polar_stw > -0.3)
+          paste0("At ", round(avg_polar_stw, 2),
                  " knots relative to polar targets, Wings was sailing close to her design envelope \u2014 minor tuning could close the gap.")
         else
-          paste0("At ", round(avg_polar_sog, 2),
+          paste0("At ", round(avg_polar_stw, 2),
                  " knots below polar targets, there\u2019s room to coax more speed from the hull. As FDR put it, \u201cwe must set sail, not drift.\u201d")
         sp <- c(sp, pp_txt)
       }
@@ -608,7 +641,11 @@ generate_performance_narrative <- function(race_calendar, track_data) {
   paragraphs <- character()
   seasons <- sort(unique(race_calendar$season[!is.na(race_calendar$season)]))
   n_seasons <- length(seasons)
-  n_total_races <- nrow(race_calendar)
+  # Count distinct race events (group multi-day races into one)
+  n_total_races <- race_calendar |>
+    mutate(race_date = as.Date(start)) |>
+    distinct(race, race_date) |>
+    nrow()
   total_nm <- sum(race_calendar$length, na.rm = TRUE)
 
   # ---- Paragraph 1: The grand overview ----
@@ -721,7 +758,7 @@ generate_performance_narrative <- function(race_calendar, track_data) {
         season = s,
         avg_sog = mean(matched$sog_knots, na.rm = TRUE),
         avg_tws = mean(matched$tws_knots, na.rm = TRUE),
-        avg_polar_sog = mean(matched$Polar_Perf_SOG, na.rm = TRUE),
+        avg_polar_stw = mean(matched$Polar_Perf_STW, na.rm = TRUE),
         n_pts = nrow(matched)
       )
     })
@@ -729,7 +766,7 @@ generate_performance_narrative <- function(race_calendar, track_data) {
 
     overall_sog <- mean(track_with_race$sog_knots, na.rm = TRUE)
     overall_tws <- mean(track_with_race$tws_knots, na.rm = TRUE)
-    overall_polar <- mean(track_with_race$Polar_Perf_SOG, na.rm = TRUE)
+    overall_polar <- mean(track_with_race$Polar_Perf_STW, na.rm = TRUE)
 
     if (!is.nan(overall_sog)) {
       sp <- c(sp, paste0("Across all instrumented races, Wings\u2019 overall average SOG is ",
@@ -745,10 +782,11 @@ generate_performance_narrative <- function(race_calendar, track_data) {
     }
 
     if (!is.nan(overall_polar)) {
-      polar_desc <- if (overall_polar > 0.2)
-        paste0("At +", round(overall_polar, 2), " knots above polar targets overall, Wings has been consistently outperforming her design specs \u2014 the naval architect should be proud (or concerned).")
-      else if (overall_polar > 0)
-        paste0("At +", round(overall_polar, 2), " knots above polar targets on aggregate, Wings is edging past her theoretical ceiling \u2014 a testament to the crew\u2019s growing proficiency.")
+      polar_desc <- if (overall_polar > 0)
+        paste0("Overall polar performance across all seasons is +", round(overall_polar, 2),
+               " knots above target, though this aggregate figure is influenced by earlier seasons ",
+               "when instrument calibration was still being refined. The most recent seasons provide ",
+               "the most trustworthy picture of how Wings truly performs against her polars.")
       else if (overall_polar > -0.3)
         paste0("At ", round(overall_polar, 2), " knots relative to polars overall, Wings is sailing close to her design envelope \u2014 not far off the mark at all.")
       else
@@ -758,26 +796,38 @@ generate_performance_narrative <- function(race_calendar, track_data) {
 
     # Polar trend across seasons
     if (length(season_perf) >= 2) {
-      polar_vals <- sapply(season_perf, function(x) x$avg_polar_sog)
+      polar_vals <- sapply(season_perf, function(x) x$avg_polar_stw)
       sog_vals   <- sapply(season_perf, function(x) x$avg_sog)
       s_names    <- sapply(season_perf, function(x) x$season)
 
       if (!any(is.nan(polar_vals))) {
-        polar_trend <- if (polar_vals[length(polar_vals)] > polar_vals[1] + 0.1)
-          paste0("Polar performance has trended upward from ", round(polar_vals[1], 2),
-                 " (", s_names[1], ") to ", round(polar_vals[length(polar_vals)], 2),
-                 " (", s_names[length(s_names)],
-                 ") \u2014 the crew is extracting more from the boat with each passing season. \u201cIt is not the ship so much as the skillful sailing that assures the prosperous voyage\u201d (George William Curtis).")
-        else if (polar_vals[length(polar_vals)] < polar_vals[1] - 0.1)
-          paste0("Polar performance has dipped from ", round(polar_vals[1], 2),
-                 " (", s_names[1], ") to ", round(polar_vals[length(polar_vals)], 2),
-                 " (", s_names[length(s_names)],
-                 "), though conditions vary season to season. \u201cThe pessimist complains about the wind; the realist adjusts the sails\u201d (William Arthur Ward).")
-        else
-          paste0("Polar performance has held steady across seasons (",
-                 paste(paste0(round(polar_vals, 2), " in ", s_names), collapse = ", "),
-                 ") \u2014 consistent boat-to-target speed, race after race.")
-        sp <- c(sp, polar_trend)
+        # Identify which seasons are recent (2025+) vs older
+        season_yrs <- suppressWarnings(as.integer(substr(s_names, 1, 4)))
+        recent_idx <- which(!is.na(season_yrs) & season_yrs >= 2025)
+        older_idx  <- which(!is.na(season_yrs) & season_yrs < 2025)
+
+        trend_parts <- character()
+
+        # Comment on older seasons with positive values as calibration artifacts
+        if (length(older_idx) > 0 && any(polar_vals[older_idx] > 0)) {
+          older_pos <- older_idx[polar_vals[older_idx] > 0]
+          trend_parts <- c(trend_parts,
+            paste0("Earlier seasons (",
+                   paste(s_names[older_pos], collapse = ", "),
+                   ") show positive polar numbers, but these likely reflect instruments that were not yet properly calibrated rather than genuine over-performance."))
+        }
+
+        # Emphasize recent seasons as the reliable benchmark
+        if (length(recent_idx) > 0) {
+          recent_avg <- round(mean(polar_vals[recent_idx]), 2)
+          recent_detail <- paste(paste0(round(polar_vals[recent_idx], 2), " in ", s_names[recent_idx]), collapse = ", ")
+          trend_parts <- c(trend_parts,
+            paste0("The most recent seasons (", recent_detail,
+                   ") provide the most reliable benchmark with properly calibrated instruments, ",
+                   "averaging ", recent_avg, " knots relative to polar targets."))
+        }
+
+        if (length(trend_parts) > 0) sp <- c(sp, paste(trend_parts, collapse = " "))
       }
     }
 
@@ -1205,6 +1255,24 @@ if (!file.exists(narratives_path)) {
   race_narratives_loaded <- readRDS(narratives_path)
 }
 
+# ---------- RACE ANALYTICS DEFAULTS (most recent race) ----------
+ra_all_seasons <- sort(unique(data_rds$race_calendar$season[!is.na(data_rds$race_calendar$season)]), decreasing = TRUE)
+ra_most_recent <- data_rds$race_calendar |> filter(!is.na(start)) |> arrange(desc(start)) |> head(1)
+ra_default_season <- if (nrow(ra_most_recent) > 0 && !is.na(ra_most_recent$season)) ra_most_recent$season else ra_all_seasons[1]
+ra_default_season_cal <- data_rds$race_calendar |> filter(!is.na(season), season == ra_default_season)
+ra_default_series_choices <- c("All", sort(unique(ra_default_season_cal$series[!is.na(ra_default_season_cal$series) & nzchar(ra_default_season_cal$series)])))
+ra_default_race_list <- ra_default_season_cal |>
+  mutate(race_date = as.Date(start)) |>
+  group_by(race, race_date) |>
+  summarise(start = min(start, na.rm = TRUE), .groups = "drop") |>
+  arrange(desc(start))
+ra_default_race_choices <- if (nrow(ra_default_race_list) > 0) {
+  labels <- paste0(ra_default_race_list$race, " (", format(ra_default_race_list$race_date, "%m/%d/%Y"), ")")
+  setNames(seq_len(nrow(ra_default_race_list)), labels)
+} else {
+  character()
+}
+
 # ---------- UI ----------
 ui <- fluidPage(
   tags$head(
@@ -1627,20 +1695,19 @@ a.social-yt-link:hover {
         fluidRow(
           column(4, selectInput(
             "ra_season_select", "Season",
-            choices = sort(unique(data_rds$race_calendar$season[!is.na(data_rds$race_calendar$season)]), decreasing = TRUE)
+            choices = ra_all_seasons,
+            selected = ra_default_season
           )),
           column(4, selectInput(
             "ra_series_select", "Race Series",
-            choices = NULL
+            choices = ra_default_series_choices,
+            selected = "All"
           )),
           column(4, selectInput(
             "ra_race_select", "Race",
-            choices = NULL
+            choices = ra_default_race_choices
           ))
-        ),
-        actionButton("btn_provide_analytics", "Provide Analytics",
-                     class = "wa-rebuild-btn",
-                     style = "margin-top: 4px; margin-bottom: 8px;")
+        )
       ),
       uiOutput("selected_race_header"),
       uiOutput("race_narrative_card"),
@@ -1853,18 +1920,22 @@ server <- function(input, output, session) {
   observeEvent(input$ra_season_select, {
     sr <- ra_season_races()
     series_choices <- sort(unique(sr$series[!is.na(sr$series) & nzchar(sr$series)]))
-    updateSelectInput(session, "ra_series_select", choices = series_choices)
+    updateSelectInput(session, "ra_series_select", choices = c("All", series_choices))
   })
   
-  # Reactive: races filtered to selected series
-
+  # Reactive: races filtered to selected series (or all if "All")
   ra_series_races <- reactive({
     sr <- ra_season_races()
     req(input$ra_series_select)
-    sr |> filter(!is.na(series), series == input$ra_series_select)
+    if (input$ra_series_select != "All") {
+      sr <- sr |> filter(!is.na(series), series == input$ra_series_select)
+    }
+    # Order from most recent to oldest
+    sr |> arrange(desc(start))
   })
   
   # Build race dropdown labels like "Race Name (MM/DD/YYYY)"
+  # Ordered most recent to oldest, default to most recent
   ra_race_choices <- reactive({
     sr <- ra_series_races()
     if (nrow(sr) == 0) return(character())
@@ -1878,25 +1949,19 @@ server <- function(input, output, session) {
     updateSelectInput(session, "ra_race_select", choices = choices)
   })
   
-  # Track which race row to display (only updates on button click)
-  ra_selected_row <- reactiveVal(NULL)
-  
-  observeEvent(input$btn_provide_analytics, {
+  # Auto-update selected race row when dropdown changes
+  ra_selected_row <- reactive({
     sr <- ra_series_races()
+    req(input$ra_race_select)
     idx <- as.integer(input$ra_race_select)
-    if (is.na(idx) || idx < 1 || idx > nrow(sr)) {
-      ra_selected_row(NULL)
-    } else {
-      ra_selected_row(sr[idx, ])
-    }
+    if (is.na(idx) || idx < 1 || idx > nrow(sr)) return(NULL)
+    sr[idx, ]
   })
   
   # Header for Race Analysis tab showing the selected race
   output$selected_race_header <- renderUI({
     row <- ra_selected_row()
-    if (is.null(row)) {
-      return(h4("Select a season and race above.", style = "color: rgba(232,237,246,0.65);"))
-    }
+    if (is.null(row)) return(NULL)
     h4(paste0(row$race, " — ", format(row$race_date, "%m/%d/%Y")))
   })
   
@@ -2055,7 +2120,8 @@ server <- function(input, output, session) {
       mutate(
         duration_hrs = as.numeric(difftime(end, start, units = "hours")),
         duration_hrs = ifelse(!is.na(duration_hrs) & duration_hrs == 0, NA_real_, duration_hrs),
-        duration_hrs = round(duration_hrs, 2)
+        duration_hrs = round(duration_hrs, 2),
+        days_on_water = as.integer(as.Date(end) - as.Date(start)) + 1L
       ) |>
       rowwise() |>
       mutate(
@@ -2083,13 +2149,20 @@ server <- function(input, output, session) {
                     tws_vals <- track_with_race$tws_knots[nmea_idx]
                     tws_vals <- tws_vals[!is.na(tws_vals)]
                     if (length(tws_vals) == 0) NA_real_ else max(tws_vals)
+                  },
+        polar_perf_stw = if (length(nmea_idx) == 0) NA_real_
+                  else {
+                    pp_vals <- track_with_race$Polar_Perf_STW[nmea_idx]
+                    pp_vals <- pp_vals[!is.na(pp_vals)]
+                    if (length(pp_vals) == 0) NA_real_ else mean(pp_vals)
                   }
       ) |>
       ungroup() |>
       mutate(
         avg_stw = ifelse(is.nan(avg_stw), NA_real_, avg_stw),
         max_stw = ifelse(is.infinite(max_stw), NA_real_, max_stw),
-        max_tws = ifelse(is.infinite(max_tws), NA_real_, max_tws)
+        max_tws = ifelse(is.infinite(max_tws), NA_real_, max_tws),
+        polar_perf_stw = ifelse(is.nan(polar_perf_stw), NA_real_, polar_perf_stw)
       ) |>
       select(-nmea_idx)
   })
@@ -2105,20 +2178,23 @@ server <- function(input, output, session) {
     summary_df <- cal_summary |>
       group_by(Season = season) |>
       summarise(
-        `# Races`   = n(),
+        Races   = n(),
+        Days    = n_distinct(as.Date(start)),
         `Avg Place` = {pn <- suppressWarnings(as.numeric(place)); if (all(is.na(pn))) NA_real_ else round(mean(pn, na.rm = TRUE), 1)},
         `Avg Fleet` = {fn <- suppressWarnings(as.numeric(fleet)); if (all(is.na(fn))) NA_real_ else round(mean(fn, na.rm = TRUE), 1)},
         Length      = round(sum(length, na.rm = TRUE), 1),
-        Sail_Hrs    = round(sum(duration_hrs, na.rm = TRUE), 1),
+        Hours       = round(sum(duration_hrs, na.rm = TRUE), 1),
         `Avg STW`   = if (all(is.na(avg_stw))) NA_real_ else round(mean(avg_stw, na.rm = TRUE), 1),
         `Max STW`   = if (all(is.na(max_stw))) NA_real_ else round(max(max_stw, na.rm = TRUE), 1),
         `Max TWS`   = if (all(is.na(max_tws))) NA_real_ else round(max(max_tws, na.rm = TRUE), 1),
+        `Polar Perf` = if (all(is.na(polar_perf_stw))) NA_real_ else round(mean(polar_perf_stw, na.rm = TRUE), 2),
         `NMEA Pts`  = sum(nmea_count),
         .groups = "drop"
       )
     
-    avg_cols <- c("Avg Place", "Avg Fleet", "Avg STW")
+    avg_cols <- c("Avg Place", "Avg Fleet", "Avg STW", "Polar Perf")
     max_cols <- c("Max STW", "Max TWS")
+    sum_int_cols <- c("Races", "Days")
     
     sketch <- htmltools::withTags(table(
       class = "display",
@@ -2137,8 +2213,9 @@ server <- function(input, output, session) {
                   function(row, data, start, end, display) {
                     var api = this.api();
                     var ncols = api.columns().count();
-                    var avgCols = ['Avg Place', 'Avg Fleet', 'Avg STW'];
+                    var avgCols = ['Avg Place', 'Avg Fleet', 'Avg STW', 'Polar Perf'];
                     var maxCols = ['Max STW', 'Max TWS'];
+                    var sumIntCols = ['Races', 'Days'];
                     $(api.column(0).footer()).html('Total');
                     for (var col = 1; col < ncols; col++) {
                       var header = $(api.column(col).header()).text();
@@ -2147,14 +2224,16 @@ server <- function(input, output, session) {
                         var x = parseFloat(String(v).replace(/,/g,''));
                         if (!isNaN(x)) vals.push(x);
                       });
-                      if (avgCols.indexOf(header) >= 0) {
+                      if (header === 'Polar Perf') {
+                        $(api.column(col).footer()).html(vals.length ? (vals.reduce(function(a,b){return a+b;},0)/vals.length).toFixed(2) : '');
+                      } else if (avgCols.indexOf(header) >= 0) {
                         $(api.column(col).footer()).html(vals.length ? (vals.reduce(function(a,b){return a+b;},0)/vals.length).toFixed(1) : '');
                       } else if (maxCols.indexOf(header) >= 0) {
                         $(api.column(col).footer()).html(vals.length ? Math.max.apply(null, vals).toFixed(1) : '');
                       } else if (header === 'NMEA Pts') {
                         var sum = vals.reduce(function(a,b){return a+b;},0);
                         $(api.column(col).footer()).html(vals.length ? sum.toLocaleString() : '');
-                      } else if (header === '# Races') {
+                      } else if (sumIntCols.indexOf(header) >= 0) {
                         var sum = vals.reduce(function(a,b){return a+b;},0);
                         $(api.column(col).footer()).html(vals.length ? sum.toFixed(0) : '');
                       } else {
@@ -2166,7 +2245,8 @@ server <- function(input, output, session) {
                 ")
               ),
               rownames = FALSE) |>
-      formatRound(columns = c("Avg Place", "Avg Fleet", "Length", "Sail_Hrs", "Avg STW", "Max STW", "Max TWS"), digits = 1) |>
+      formatRound(columns = c("Avg Place", "Avg Fleet", "Length", "Hours", "Avg STW", "Max STW", "Max TWS"), digits = 1) |>
+      formatRound(columns = "Polar Perf", digits = 2) |>
       formatRound(columns = "NMEA Pts", digits = 0)
   })
   
@@ -2182,14 +2262,16 @@ server <- function(input, output, session) {
       mutate(series_label = ifelse(is.na(series) | series == "", "(No Series)", series)) |>
       group_by(Series = series_label) |>
       summarise(
-        `# Races`   = n(),
+        Races   = n(),
+        Days    = n_distinct(as.Date(start)),
         `Avg Place` = {pn <- suppressWarnings(as.numeric(place)); if (all(is.na(pn))) NA_real_ else round(mean(pn, na.rm = TRUE), 1)},
         `Avg Fleet` = {fn <- suppressWarnings(as.numeric(fleet)); if (all(is.na(fn))) NA_real_ else round(mean(fn, na.rm = TRUE), 1)},
         Length      = round(sum(length, na.rm = TRUE), 1),
-        Sail_Hrs    = round(sum(duration_hrs, na.rm = TRUE), 1),
+        Hours       = round(sum(duration_hrs, na.rm = TRUE), 1),
         `Avg STW`   = if (all(is.na(avg_stw))) NA_real_ else round(mean(avg_stw, na.rm = TRUE), 1),
         `Max STW`   = if (all(is.na(max_stw))) NA_real_ else round(max(max_stw, na.rm = TRUE), 1),
         `Max TWS`   = if (all(is.na(max_tws))) NA_real_ else round(max(max_tws, na.rm = TRUE), 1),
+        `Polar Perf` = if (all(is.na(polar_perf_stw))) NA_real_ else round(mean(polar_perf_stw, na.rm = TRUE), 2),
         `NMEA Pts`  = sum(nmea_count),
         .groups = "drop"
       )
@@ -2211,8 +2293,9 @@ server <- function(input, output, session) {
                   function(row, data, start, end, display) {
                     var api = this.api();
                     var ncols = api.columns().count();
-                    var avgCols = ['Avg Place', 'Avg Fleet', 'Avg STW'];
+                    var avgCols = ['Avg Place', 'Avg Fleet', 'Avg STW', 'Polar Perf'];
                     var maxCols = ['Max STW', 'Max TWS'];
+                    var sumIntCols = ['Races', 'Days'];
                     $(api.column(0).footer()).html('Total');
                     for (var col = 1; col < ncols; col++) {
                       var header = $(api.column(col).header()).text();
@@ -2221,14 +2304,16 @@ server <- function(input, output, session) {
                         var x = parseFloat(String(v).replace(/,/g,''));
                         if (!isNaN(x)) vals.push(x);
                       });
-                      if (avgCols.indexOf(header) >= 0) {
+                      if (header === 'Polar Perf') {
+                        $(api.column(col).footer()).html(vals.length ? (vals.reduce(function(a,b){return a+b;},0)/vals.length).toFixed(2) : '');
+                      } else if (avgCols.indexOf(header) >= 0) {
                         $(api.column(col).footer()).html(vals.length ? (vals.reduce(function(a,b){return a+b;},0)/vals.length).toFixed(1) : '');
                       } else if (maxCols.indexOf(header) >= 0) {
                         $(api.column(col).footer()).html(vals.length ? Math.max.apply(null, vals).toFixed(1) : '');
                       } else if (header === 'NMEA Pts') {
                         var sum = vals.reduce(function(a,b){return a+b;},0);
                         $(api.column(col).footer()).html(vals.length ? sum.toLocaleString() : '');
-                      } else if (header === '# Races') {
+                      } else if (sumIntCols.indexOf(header) >= 0) {
                         var sum = vals.reduce(function(a,b){return a+b;},0);
                         $(api.column(col).footer()).html(vals.length ? sum.toFixed(0) : '');
                       } else {
@@ -2240,7 +2325,8 @@ server <- function(input, output, session) {
                 ")
               ),
               rownames = FALSE) |>
-      formatRound(columns = c("Avg Place", "Avg Fleet", "Length", "Sail_Hrs", "Avg STW", "Max STW", "Max TWS"), digits = 1) |>
+      formatRound(columns = c("Avg Place", "Avg Fleet", "Length", "Hours", "Avg STW", "Max STW", "Max TWS"), digits = 1) |>
+      formatRound(columns = "Polar Perf", digits = 2) |>
       formatRound(columns = "NMEA Pts", digits = 0)
   })
   
@@ -2259,15 +2345,16 @@ server <- function(input, output, session) {
         Race       = race,
         Place      = ifelse(is.na(place) | place == "", "", place),
         Fleet      = ifelse(is.na(fleet), "", as.character(as.integer(fleet))),
+        Days       = days_on_water,
         Length     = ifelse(is.na(length), NA_real_, round(length, 1)),
-        Sail_Hrs   = ifelse(is.na(duration_hrs), NA_real_, round(duration_hrs, 1)),
-        `Avg STW`  = ifelse(is.na(avg_stw), NA_real_, round(avg_stw, 1)),
-        `Max STW`  = ifelse(is.na(max_stw), NA_real_, round(max_stw, 1)),
-        `Max TWS`  = ifelse(is.na(max_tws), NA_real_, round(max_tws, 1)),
-        `NMEA Pts` = nmea_count
+        Hours      = ifelse(is.na(duration_hrs), NA_real_, round(duration_hrs, 1)),
+        `Avg STW`    = ifelse(is.na(avg_stw), NA_real_, round(avg_stw, 1)),
+        `Max STW`    = ifelse(is.na(max_stw), NA_real_, round(max_stw, 1)),
+        `Max TWS`    = ifelse(is.na(max_tws), NA_real_, round(max_tws, 1)),
+        `Polar Perf` = ifelse(is.na(polar_perf_stw), NA_real_, round(polar_perf_stw, 2)),
+        `NMEA Pts`   = nmea_count
       )
     
-    # right-align: Place(4), Fleet(5), Length(6), Sail_Hrs(7), Avg STW(8), Max STW(9), Max TWS(10), NMEA Pts(11)
     sketch <- htmltools::withTags(table(
       class = "display",
       thead(tr(lapply(names(res), th))),
@@ -2282,14 +2369,15 @@ server <- function(input, output, session) {
         dom = "t",
         pageLength = 100,
         columnDefs = list(
-          list(className = "dt-right", targets = c(4, 5, 6, 7, 8, 9, 10, 11))
+          list(className = "dt-right", targets = c(4, 5, 6, 7, 8, 9, 10, 11, 12, 13))
         ),
         footerCallback = DT::JS("
           function(row, data, start, end, display) {
             var api = this.api();
             var ncols = api.columns().count();
-            var avgCols = ['Avg STW'];
+            var avgCols = ['Avg STW', 'Polar Perf'];
             var maxCols = ['Max STW', 'Max TWS'];
+            var sumIntCols = ['Days'];
             $(api.column(0).footer()).html('');
             $(api.column(1).footer()).html('');
             $(api.column(2).footer()).html('');
@@ -2303,13 +2391,18 @@ server <- function(input, output, session) {
                 var x = parseFloat(String(v).replace(/,/g,''));
                 if (!isNaN(x)) vals.push(x);
               });
-              if (avgCols.indexOf(header) >= 0) {
+              if (header === 'Polar Perf') {
+                $(api.column(col).footer()).html(vals.length ? (vals.reduce(function(a,b){return a+b;},0)/vals.length).toFixed(2) : '');
+              } else if (avgCols.indexOf(header) >= 0) {
                 $(api.column(col).footer()).html(vals.length ? (vals.reduce(function(a,b){return a+b;},0)/vals.length).toFixed(1) : '');
               } else if (maxCols.indexOf(header) >= 0) {
                 $(api.column(col).footer()).html(vals.length ? Math.max.apply(null, vals).toFixed(1) : '');
               } else if (header === 'NMEA Pts') {
                 var sum = vals.reduce(function(a,b){return a+b;},0);
                 $(api.column(col).footer()).html(vals.length ? sum.toLocaleString() : '');
+              } else if (sumIntCols.indexOf(header) >= 0) {
+                var sum = vals.reduce(function(a,b){return a+b;},0);
+                $(api.column(col).footer()).html(vals.length ? sum.toFixed(0) : '');
               } else {
                 var sum = vals.reduce(function(a,b){return a+b;},0);
                 $(api.column(col).footer()).html(vals.length ? sum.toFixed(1) : '');
@@ -2320,7 +2413,8 @@ server <- function(input, output, session) {
       ),
       rownames = FALSE
     ) |>
-      formatRound(columns = c("Length", "Sail_Hrs", "Avg STW", "Max STW", "Max TWS"), digits = 1) |>
+      formatRound(columns = c("Length", "Hours", "Avg STW", "Max STW", "Max TWS"), digits = 1) |>
+      formatRound(columns = "Polar Perf", digits = 2) |>
       formatRound(columns = "NMEA Pts", digits = 0)
   })
   
