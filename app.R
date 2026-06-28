@@ -240,7 +240,15 @@ generate_race_narrative <- function(race_row, completed_races) {
   race_date <- format(race_row$race_date, "%B %d, %Y")
   has_data  <- !is.na(race_row$avg_sog) && !is.nan(race_row$avg_sog)
 
-  # Maritime quotes pool, deterministically selected by race name + date hash
+  # Deterministic picker: given a seed string + slot name, pick one item from a vector.
+  # The slot name ensures different narrative slots don't all land on the same index.
+  seed_hash <- sum(utf8ToInt(paste0(race_name, race_date)))
+  pick_from <- function(opts, slot = "") {
+    h <- seed_hash + sum(utf8ToInt(slot))
+    opts[((h) %% length(opts)) + 1]
+  }
+
+  # Maritime quotes pool
   maritime_quotes <- c(
     "\u201cTwenty years from now you will be more disappointed by the things you didn\u2019t do than by the ones you did. Sail away from the safe harbor.\u201d \u2014 Mark Twain",
     "\u201cThe pessimist complains about the wind; the optimist expects it to change; the realist adjusts the sails.\u201d \u2014 William Arthur Ward",
@@ -264,23 +272,23 @@ generate_race_narrative <- function(race_row, completed_races) {
     "\u201cFor whatever we lose (like a you or a me), it\u2019s always ourselves we find in the sea.\u201d \u2014 E. E. Cummings"
   )
 
-  # Deterministic quote picker based on race name + date hash
-  pick_quote <- function(seed_text) {
-    idx <- (sum(utf8ToInt(seed_text)) %% length(maritime_quotes)) + 1
-    maritime_quotes[idx]
-  }
-
+  # ---- No track data ----
   if (!has_data) {
-    opts <- c(
+    no_data_opts <- c(
       paste0("No track data is available for ", race_name, " (",
              race_date, "). As Joseph Conrad wrote, \u201cThere is nothing more enticing, disenchanting, and enslaving than the life at sea\u201d \u2014 apparently the GPS found the \u2018disenchanting\u2019 part and checked out."),
       paste0("Track data for ", race_name, " (", race_date,
              ") has gone the way of Amelia Earhart \u2014 vanished without a trace. The instruments were either napping or staging a quiet mutiny. As they say, \u201cHe that would learn to pray, let him go to sea.\u201d"),
       paste0("Alas, no track data exists for ", race_name, " (", race_date,
-             "). The sailing happened, but the electrons that were supposed to record it apparently jumped ship. \u201cA ship in harbor is safe, but that is not what ships are built for.\u201d \u2014 And neither is a GPS that stays in sleep mode.")
+             "). The sailing happened, but the electrons that were supposed to record it apparently jumped ship. \u201cA ship in harbor is safe, but that is not what ships are built for.\u201d \u2014 And neither is a GPS that stays in sleep mode."),
+      paste0(race_name, " (", race_date,
+             ") sailed off the grid entirely. The NMEA data must have mutinied somewhere around the start line. Seneca once said, \u201cIf one does not know to which port one is sailing, no wind is favorable\u201d \u2014 apparently the GPS didn\u2019t know either."),
+      paste0("The logbook for ", race_name, " (", race_date,
+             ") is conspicuously empty. Either the instruments staged a wildcat strike or the data fell overboard. Either way, \u201cthe cure for anything is salt water\u201d \u2014 and clearly the electronics got too much of it."),
+      paste0(race_name, " on ", race_date,
+             " left no digital footprint. The race happened \u2014 the GPS just wasn\u2019t invited. As Brooks Atkinson noted, \u201cLand was created to provide a place for boats to visit\u201d \u2014 perhaps the instruments decided to stay ashore.")
     )
-    idx <- (sum(utf8ToInt(paste0(race_name, race_date))) %% length(opts)) + 1
-    return(opts[idx])
+    return(pick_from(no_data_opts, "nodata"))
   }
 
   n_completed <- nrow(completed_races)
@@ -291,18 +299,51 @@ generate_race_narrative <- function(race_row, completed_races) {
 
   # Distance
   if (!is.na(race_row$length)) {
+    len <- race_row$length
     all_len <- completed_races$length[!is.na(completed_races$length)]
     if (length(all_len) > 2) {
-      pct <- mean(race_row$length >= all_len)
-      d <- if (pct < 0.25) "one of the shorter jaunts on the dance card \u2014 a quick tango with the bay"
-           else if (pct < 0.50) "a mid-range cruise \u2014 long enough to settle in, short enough to stay hungry"
-           else if (pct < 0.75) "a proper voyage that demanded endurance and more than a few granola bars"
-           else "one of the longest courses Wings has ever stared down \u2014 marathon territory"
-      p1_parts <- c(p1_parts, paste0("At ", race_row$length,
-                                     " nautical miles, this was ", d, "."))
+      pct <- mean(len >= all_len)
+      short_opts <- c(
+        "one of the shorter jaunts on the dance card \u2014 a quick tango with the bay",
+        "a sprint by Wings\u2019 standards \u2014 barely enough time to finish the first thermos of coffee",
+        "the nautical equivalent of a warm-up lap \u2014 short, sharp, and over before the sunscreen soaked in",
+        "a compact course that rewarded quick thinking over brute endurance"
+      )
+      mid_low_opts <- c(
+        "a mid-range cruise \u2014 long enough to settle in, short enough to stay hungry",
+        "a course of modest ambition \u2014 not a day sail, not an odyssey, but somewhere in the agreeable middle",
+        "enough distance to find a rhythm but not so much that the crew started rationing snacks",
+        "a comfortable distance \u2014 the kind where you finish wanting just a little bit more"
+      )
+      mid_high_opts <- c(
+        "a proper voyage that demanded endurance and more than a few granola bars",
+        "a course with some real estate to it \u2014 the kind that separates the prepared from the optimistic",
+        "a substantial outing that tested patience, provisions, and the second wind of every crew member",
+        "long enough that the crew stopped asking \u201chow much farther?\u201d and started just sailing"
+      )
+      long_opts <- c(
+        "one of the longest courses Wings has ever stared down \u2014 marathon territory",
+        "an absolute beast of a course \u2014 the kind that earns you bragging rights at the dock",
+        "the sort of distance that makes you question your life choices around mile two and feel heroic by the finish",
+        "a proper expedition \u2014 if nautical miles were frequent flyer points, this one would earn an upgrade"
+      )
+      d <- if (pct < 0.25) pick_from(short_opts, "dist")
+           else if (pct < 0.50) pick_from(mid_low_opts, "dist")
+           else if (pct < 0.75) pick_from(mid_high_opts, "dist")
+           else pick_from(long_opts, "dist")
+
+      dist_frame <- pick_from(c(
+        paste0("At ", len, " nautical miles, this was ", d, "."),
+        paste0("The course measured ", len, " nm \u2014 ", d, "."),
+        paste0(len, " nautical miles of racing ahead: ", d, ".")
+      ), "distframe")
+      p1_parts <- c(p1_parts, dist_frame)
     } else {
-      p1_parts <- c(p1_parts, paste0("The course stretched ", race_row$length,
-                                     " nautical miles across the bay."))
+      p1_parts <- c(p1_parts, pick_from(c(
+        paste0("The course stretched ", len, " nautical miles across the bay."),
+        paste0("At ", len, " nautical miles, the course was laid and the starting gun awaited."),
+        paste0(len, " nautical miles from gun to finish \u2014 every one of them earned.")
+      ), "distearly"))
     }
   }
 
@@ -311,8 +352,13 @@ generate_race_narrative <- function(race_row, completed_races) {
     hrs  <- floor(race_row$duration_hrs)
     mins <- round((race_row$duration_hrs - hrs) * 60)
     dur  <- if (hrs > 0) paste0(hrs, "h ", mins, "m") else paste0(mins, "m")
-    p1_parts <- c(p1_parts, paste0("Wings battled the course for ", dur,
-                                    " \u2014 every minute earned, none gifted."))
+    dur_opts <- c(
+      paste0("Wings battled the course for ", dur, " \u2014 every minute earned, none gifted."),
+      paste0("From start to finish: ", dur, " of concentration, sail changes, and the occasional argument with the wind."),
+      paste0("The clock ran for ", dur, " \u2014 a testament to persistence if nothing else."),
+      paste0(dur, " on the water, which is exactly as long as it took for the crew to remember why they love this sport.")
+    )
+    p1_parts <- c(p1_parts, pick_from(dur_opts, "duration"))
   }
 
   # Placement
@@ -321,100 +367,258 @@ generate_race_narrative <- function(race_row, completed_races) {
     fleet_n   <- as.integer(race_row$fleet)
     if (!is.na(place_num) && !is.na(fleet_n) && fleet_n > 0) {
       pct_place <- place_num / fleet_n
-      ptxt <- if (place_num == 1) {
+
+      first_opts <- c(
         paste0("Wings seized first place in a fleet of ", fleet_n,
-               " \u2014 \u201cthe wind and the waves are always on the side of the ablest navigator\u201d (Edmund Gibbon), and today that navigator was aboard Wings.")
-      } else if (pct_place <= 0.33) {
+               " \u2014 \u201cthe wind and the waves are always on the side of the ablest navigator\u201d (Edmund Gibbon), and today that navigator was aboard Wings."),
+        paste0("First across the line in a fleet of ", fleet_n,
+               ". The crew left nothing on the table and the competition in their wake. As FDR said, \u201cto reach a port we must set sail \u2014 sail, not drift.\u201d Wings did not drift."),
+        paste0("A bullet \u2014 first place out of ", fleet_n,
+               " boats. When Wyland said \u201cthe ocean stirs the heart,\u201d he might have been describing this finish."),
+        paste0("Wings claimed the top step in a ", fleet_n,
+               "-boat fleet. The kind of result that makes the dock walk a little taller and the post-race beverage taste a little sweeter.")
+      )
+      top_third_opts <- c(
         paste0("Crossing the line ", place_num, " out of ", fleet_n,
-               " boats, Wings carved out a top-third finish. Not too shabby \u2014 as Seneca might say, they clearly knew which port they were sailing to.")
-      } else if (pct_place <= 0.50) {
+               " boats, Wings carved out a top-third finish. Not too shabby \u2014 as Seneca might say, they clearly knew which port they were sailing to."),
+        paste0("A ", place_num, "-of-", fleet_n,
+               " finish \u2014 comfortably in the upper tier. \u201cIt is not the ship so much as the skillful sailing\u201d (George William Curtis), and the sailing was skillful today."),
+        paste0("Finishing ", place_num, " in a fleet of ", fleet_n,
+               ", Wings punched above average. The kind of result that earns a nod from the competition and a clear conscience from the crew."),
+        paste0(place_num, " out of ", fleet_n,
+               " \u2014 a top-third finish that Jacques Cousteau would tip his red cap to. The sea cast its spell, and Wings answered.")
+      )
+      top_half_opts <- c(
         paste0("A ", place_num, " place finish in a fleet of ", fleet_n,
-               " \u2014 solidly in the top half. As the old salts say, \u201cit is not the ship so much as the skillful sailing that assures the prosperous voyage.\u201d")
-      } else if (pct_place <= 0.75) {
+               " \u2014 solidly in the top half. As the old salts say, \u201cit is not the ship so much as the skillful sailing that assures the prosperous voyage.\u201d"),
+        paste0("Finishing ", place_num, " of ", fleet_n,
+               " boats. Not headline news, but a respectable showing \u2014 the kind of mid-fleet result where the margins were probably measured in seconds, not boat lengths."),
+        paste0(place_num, " out of ", fleet_n,
+               " \u2014 the upper half of the fleet, where the air is a little cleaner and the tactics a little sharper. Room to improve, but nothing to apologize for."),
+        paste0("A ", place_num, "-place finish in a ", fleet_n,
+               "-boat field. Jimmy Dean said \u201cI can\u2019t control the wind, but I can adjust my sails\u201d \u2014 today the adjustments landed Wings in the top half.")
+      )
+      lower_half_opts <- c(
         paste0("Placing ", place_num, " of ", fleet_n,
-               " boats \u2014 not the finish the crew ordered, but as Joseph Conrad warned, \u201cany fool can carry on, but a wise man knows how to shorten sail in time.\u201d Lessons were learned.")
-      } else {
+               " boats \u2014 not the finish the crew ordered, but as Joseph Conrad warned, \u201cany fool can carry on, but a wise man knows how to shorten sail in time.\u201d Lessons were learned."),
+        paste0("A ", place_num, "-of-", fleet_n,
+               " result. Sometimes the bay wins. William Arthur Ward would note that the realist adjusts the sails \u2014 the crew will adjust for next time."),
+        paste0(place_num, " out of ", fleet_n,
+               " boats \u2014 the kind of finish that builds character and fuels the quiet determination to do better. As George Herbert put it, \u201cHe that would learn to pray, let him go to sea.\u201d"),
+        paste0("Finishing ", place_num, " in a fleet of ", fleet_n,
+               ". Not the podium, but not the back of the pack either \u2014 a no-man\u2019s-land where small tactical calls made all the difference.")
+      )
+      bottom_opts <- c(
         paste0("At ", place_num, " of ", fleet_n,
-               ", this was what diplomats call a \u2018character-building experience.\u2019 As Mark Twain put it, \u201cyou will be more disappointed by the things you didn\u2019t do\u201d \u2014 and Wings certainly did show up.")
-      }
+               ", this was what diplomats call a \u2018character-building experience.\u2019 As Mark Twain put it, \u201cyou will be more disappointed by the things you didn\u2019t do\u201d \u2014 and Wings certainly did show up."),
+        paste0(place_num, " of ", fleet_n,
+               " \u2014 not the result anyone drew up on the whiteboard. But as Aristotle Onassis reminded us, \u201cwe must learn to sail in high winds.\u201d Some classrooms are tougher than others."),
+        paste0("A ", place_num, "-place finish out of ", fleet_n,
+               ". Sometimes the scoreboard is unkind, but \u201cthe cure for anything is salt water: sweat, tears, or the sea\u201d (Isak Dinesen). Wings got all three today."),
+        paste0("Finishing near the back at ", place_num, " of ", fleet_n,
+               ". The sort of day where you remind yourself that John Masefield just asked for \u201ca tall ship and a star to steer her by\u201d \u2014 he never mentioned a trophy.")
+      )
+
+      ptxt <- if (place_num == 1) pick_from(first_opts, "place")
+              else if (pct_place <= 0.33) pick_from(top_third_opts, "place")
+              else if (pct_place <= 0.50) pick_from(top_half_opts, "place")
+              else if (pct_place <= 0.75) pick_from(lower_half_opts, "place")
+              else pick_from(bottom_opts, "place")
       p1_parts <- c(p1_parts, ptxt)
     } else if (is.na(place_num)) {
-      p1_parts <- c(p1_parts, paste0("Wings finished with a ",
-                                     race_row$place, " in a fleet of ", fleet_n,
-                                     " \u2014 an unconventional result, like finding a message in a bottle that just says \u2018good luck.\u2019"))
+      nonnum_opts <- c(
+        paste0("Wings finished with a ", race_row$place, " in a fleet of ", fleet_n,
+               " \u2014 an unconventional result, like finding a message in a bottle that just says \u2018good luck.\u2019"),
+        paste0("The scoreboard reads \u2018", race_row$place, "\u2019 in a fleet of ", fleet_n,
+               " \u2014 not your typical number, but then Wings has never been your typical boat."),
+        paste0("A result of \u2018", race_row$place, "\u2019 out of ", fleet_n,
+               ". The race committee had their reasons. Wings had the sea.")
+      )
+      p1_parts <- c(p1_parts, pick_from(nonnum_opts, "place"))
     }
   }
 
-  if (length(p1_parts) > 0)
+  if (length(p1_parts) > 0) {
+    opener_opts <- c(
+      paste0(race_name, " on ", race_date, ". "),
+      paste0(race_name, ", ", race_date, ". "),
+      paste0(race_date, " \u2014 ", race_name, ". ")
+    )
     paragraphs <- c(paragraphs,
-                    paste0(race_name, " on ", race_date, ". ",
+                    paste0(pick_from(opener_opts, "opener"),
                            paste(p1_parts, collapse = " ")))
+  }
 
   # ---- Paragraph 2: Speed & polar performance ----
   sp <- character()
 
   if (!is.na(race_row$avg_sog) && !is.nan(race_row$avg_sog)) {
+    avg_sog <- round(race_row$avg_sog, 1)
     all_sog <- completed_races$avg_sog[!is.na(completed_races$avg_sog) &
                                         !is.nan(completed_races$avg_sog)]
     sog_pct <- if (length(all_sog) > 2) mean(race_row$avg_sog >= all_sog) else 0.5
-    desc <- if (sog_pct < 0.20) "on the leisurely end of the spectrum \u2014 the sort of pace where dolphins lap you"
-            else if (sog_pct < 0.40) "a touch below the fleet\u2019s historical average \u2014 not embarrassing, just... modest"
-            else if (sog_pct < 0.60) "right in the middle of Wings\u2019 historical range \u2014 steady as she goes"
-            else if (sog_pct < 0.80) "faster than most of Wings\u2019 outings \u2014 the hull was humming"
-            else "among the fastest performances in the logbook \u2014 Jacques Cousteau would approve"
-    peak <- if (!is.na(race_row$max_sog))
-              paste0(" with a peak of ", round(race_row$max_sog, 1), " knots (hold onto your hats)")
-            else ""
-    sp <- c(sp, paste0("Average speed over ground was ",
-                       round(race_row$avg_sog, 1), " knots", peak,
-                       " \u2014 ", desc, "."))
+
+    slow_opts <- c(
+      "on the leisurely end of the spectrum \u2014 the sort of pace where dolphins lap you",
+      "a contemplative speed, as if the boat itself was deep in thought",
+      "the kind of pace that tests your patience more than your sail trim",
+      "slow enough that the crew had time to rethink every tactical decision twice"
+    )
+    below_avg_opts <- c(
+      "a touch below the fleet\u2019s historical average \u2014 not embarrassing, just... modest",
+      "slightly below Wings\u2019 usual clip \u2014 like showing up to a party fashionably late, but with less champagne",
+      "on the conservative side of Wings\u2019 speed ledger \u2014 the conditions were stingy",
+      "a half-step behind the historical pace, as if the bay was charging a toll"
+    )
+    mid_opts <- c(
+      "right in the middle of Wings\u2019 historical range \u2014 steady as she goes",
+      "squarely in the median zone \u2014 the Goldilocks speed: not too fast, not too slow",
+      "par for the course in Wings\u2019 career average \u2014 dependable if not dramatic",
+      "a thoroughly average pace by Wings\u2019 standards, which is not a criticism \u2014 average is hard-earned out here"
+    )
+    fast_opts <- c(
+      "faster than most of Wings\u2019 outings \u2014 the hull was humming",
+      "well above the historical norm \u2014 Wings was in the groove and the water knew it",
+      "a pace that put Wings in the upper echelon of her own race history",
+      "the kind of speed that makes the crew grin and the competition nervous"
+    )
+    fastest_opts <- c(
+      "among the fastest performances in the logbook \u2014 Jacques Cousteau would approve",
+      "one for the record books \u2014 Wings was absolutely flying by her own standards",
+      "blazing fast in historical context \u2014 if speed were poetry, this was a sonnet",
+      "a top-shelf performance that put most previous outings to shame"
+    )
+
+    desc <- if (sog_pct < 0.20) pick_from(slow_opts, "sog")
+            else if (sog_pct < 0.40) pick_from(below_avg_opts, "sog")
+            else if (sog_pct < 0.60) pick_from(mid_opts, "sog")
+            else if (sog_pct < 0.80) pick_from(fast_opts, "sog")
+            else pick_from(fastest_opts, "sog")
+
+    peak_opts <- if (!is.na(race_row$max_sog)) {
+      pk <- round(race_row$max_sog, 1)
+      pick_from(c(
+        paste0(" with a peak of ", pk, " knots (hold onto your hats)"),
+        paste0(", topping out at ", pk, " knots in a moment of pure velocity"),
+        paste0(" and a max burst of ", pk, " knots that briefly rattled the coffee mugs"),
+        paste0(", hitting ", pk, " knots at the high-water mark")
+      ), "peak")
+    } else ""
+
+    sog_frame <- pick_from(c(
+      paste0("Average speed over ground was ", avg_sog, " knots", peak_opts, " \u2014 ", desc, "."),
+      paste0("Wings averaged ", avg_sog, " knots SOG", peak_opts, " \u2014 ", desc, "."),
+      paste0("The GPS logged an average of ", avg_sog, " knots", peak_opts, ". That\u2019s ", desc, ".")
+    ), "sogframe")
+    sp <- c(sp, sog_frame)
   }
 
   if (!is.na(race_row$avg_stw) && !is.nan(race_row$avg_stw) &&
       !is.na(race_row$avg_sog) && !is.nan(race_row$avg_sog)) {
     diff <- round(race_row$avg_sog - race_row$avg_stw, 2)
     if (abs(diff) > 0.15) {
-      dir <- if (diff > 0)
-        paste0("a friendly current chipping in about ", abs(diff), " knots \u2014 free speed, the best kind")
-      else
-        paste0("an adversarial current dragging things back by about ", abs(diff), " knots \u2014 the sea giveth and the sea taketh away")
-      sp <- c(sp, paste0("The SOG-STW gap reveals ", dir, "."))
+      if (diff > 0) {
+        pos_opts <- c(
+          paste0("a friendly current chipping in about ", abs(diff), " knots \u2014 free speed, the best kind"),
+          paste0("Mother Nature\u2019s subsidy: roughly ", abs(diff), " knots of current boost, no engine required"),
+          paste0("a favorable tide lending ", abs(diff), " knots \u2014 the kind of gift you don\u2019t question"),
+          paste0("a helpful push of about ", abs(diff), " knots from the current \u2014 sometimes the sea is generous")
+        )
+        sp <- c(sp, paste0("The SOG-STW gap reveals ", pick_from(pos_opts, "current"), "."))
+      } else {
+        neg_opts <- c(
+          paste0("an adversarial current dragging things back by about ", abs(diff), " knots \u2014 the sea giveth and the sea taketh away"),
+          paste0("the tide playing defense, stealing roughly ", abs(diff), " knots of hard-won boat speed"),
+          paste0("an unfriendly current taxing the boat about ", abs(diff), " knots \u2014 sailing\u2019s version of a headwind on the freeway"),
+          paste0("a current penalty of ", abs(diff), " knots \u2014 the bay extracting its toll for the privilege of racing")
+        )
+        sp <- c(sp, paste0("The SOG-STW gap reveals ", pick_from(neg_opts, "current"), "."))
+      }
     }
   }
 
   if (!is.na(race_row$polar_perf_stw) && !is.nan(race_row$polar_perf_stw)) {
     pp <- round(race_row$polar_perf_stw, 2)
-    # Determine if this is a recent season (2025+) vs older
     season_start_yr <- suppressWarnings(as.integer(substr(race_row$season, 1, 4)))
     is_recent <- !is.na(season_start_yr) && season_start_yr >= 2025
 
     ptxt <- if (pp > 0.3 && !is_recent) {
-      paste0("Polar performance registered at +", pp,
-             " knots above target. Given that the instruments were still being dialed in during this period, ",
-             "this likely reflects a speed sensor calibration issue rather than genuine over-performance. ",
-             "Early-season instrument readings should be taken with a grain of sea salt.")
+      pick_from(c(
+        paste0("Polar performance registered at +", pp,
+               " knots above target. Given that the instruments were still being dialed in during this period, ",
+               "this likely reflects a speed sensor calibration issue rather than genuine over-performance. ",
+               "Early-season instrument readings should be taken with a grain of sea salt."),
+        paste0("The polars show +", pp,
+               " knots above target, but the speed sensors during this era were more aspirational than accurate. ",
+               "Think of it as the instruments telling the crew what they wanted to hear. ",
+               "Calibration is a journey, not a destination."),
+        paste0("+", pp,
+               " knots over polar targets \u2014 impressive on paper, but the paddle wheel was still in its \u2018creative interpretation\u2019 phase. ",
+               "The polars are trustworthy; the sensor data from this period, less so.")
+      ), "polar")
     } else if (pp > 0 && !is_recent) {
-      paste0("Polar performance was +", pp,
-             " knots above target. In the early days of Wings\u2019 instrumentation, ",
-             "positive polar numbers often pointed to uncalibrated speed sensors rather than superhuman sailing. ",
-             "The polars themselves are sound \u2014 the paddle wheel, less so.")
+      pick_from(c(
+        paste0("Polar performance was +", pp,
+               " knots above target. In the early days of Wings\u2019 instrumentation, ",
+               "positive polar numbers often pointed to uncalibrated speed sensors rather than superhuman sailing. ",
+               "The polars themselves are sound \u2014 the paddle wheel, less so."),
+        paste0("+", pp,
+               " knots above polar target. Before the instruments were properly calibrated, ",
+               "these readings were more decorative than diagnostic. Trust the trend, not the absolute number."),
+        paste0("Polar performance of +", pp,
+               " knots. In this pre-calibration era, the speed sensor had a tendency to flatter. ",
+               "Take it with the same grain of sea salt you\u2019d apply to a fish story about \u2018the one that got away.\u2019")
+      ), "polar")
     } else if (pp > 0.3 && is_recent) {
-      paste0("Polar performance clocked in at +", pp,
-             " knots above target \u2014 with properly calibrated instruments, this is a genuinely impressive result. ",
-             "Wings was sailing faster than the polars predicted, and the crew deserves the credit.")
+      pick_from(c(
+        paste0("Polar performance clocked in at +", pp,
+               " knots above target \u2014 with properly calibrated instruments, this is a genuinely impressive result. ",
+               "Wings was sailing faster than the polars predicted, and the crew deserves the credit."),
+        paste0("+", pp,
+               " knots above polar targets. With the instruments now dialed in, this is the real deal \u2014 ",
+               "Wings was outrunning her own design specs. Somewhere, a naval architect is nodding approvingly."),
+        paste0("Polar performance hit +", pp,
+               " knots over target. Now that the sensors are trustworthy, numbers like these tell a genuine story: ",
+               "the crew found speed the designers didn\u2019t promise.")
+      ), "polar")
     } else if (pp > 0 && is_recent) {
-      paste0("Polar performance was +", pp,
-             " knots above target \u2014 a solid result now that the instruments are well-calibrated. ",
-             "The crew squeezed out a little extra from the boat.")
+      pick_from(c(
+        paste0("Polar performance was +", pp,
+               " knots above target \u2014 a solid result now that the instruments are well-calibrated. ",
+               "The crew squeezed out a little extra from the boat."),
+        paste0("+", pp,
+               " knots above polar targets \u2014 not earth-shattering, but a clean positive number with trustworthy instruments is always a good sign."),
+        paste0("Polar performance of +", pp,
+               " knots. With calibrated sensors, this modest over-performance is honest speed \u2014 earned by the crew, confirmed by the data.")
+      ), "polar")
     } else if (pp > -0.3) {
-      paste0("Polar performance of ", pp,
-             " knots \u2014 just a whisker below target. Close enough that the polars aren\u2019t losing sleep over it.")
+      pick_from(c(
+        paste0("Polar performance of ", pp,
+               " knots \u2014 just a whisker below target. Close enough that the polars aren\u2019t losing sleep over it."),
+        paste0("At ", pp,
+               " knots relative to polars, Wings was kissing distance from target. A boat-length here, a puff there, and this number flips positive."),
+        paste0("Polar performance of ", pp,
+               " knots \u2014 essentially on the money. The margins at this level are measured in tenths, and tenths are measured in luck.")
+      ), "polar")
     } else if (pp > -0.7) {
-      paste0("At ", pp,
-             " knots below polar targets, the boat had more in the tank. The conditions (or perhaps the crew\u2019s pre-race lunch choices) left some speed on the table.")
+      pick_from(c(
+        paste0("At ", pp,
+               " knots below polar targets, the boat had more in the tank. The conditions (or perhaps the crew\u2019s pre-race lunch choices) left some speed on the table."),
+        paste0("Polar performance of ", pp,
+               " knots below target \u2014 not disastrous, but the polars are gently clearing their throat. There was speed to be found."),
+        paste0(pp, " knots under polar targets. The boat was capable of more, but the day had other ideas. ",
+               "Sometimes the best-laid tactics meet a current that didn\u2019t read the playbook.")
+      ), "polar")
     } else {
-      paste0("Polar performance of ", pp,
-             " knots below target \u2014 rough day at the office. \u201cWe must learn to sail in high winds,\u201d Aristotle Onassis once said. Some days the curriculum is harder than others.")
+      pick_from(c(
+        paste0("Polar performance of ", pp,
+               " knots below target \u2014 rough day at the office. \u201cWe must learn to sail in high winds,\u201d Aristotle Onassis once said. Some days the curriculum is harder than others."),
+        paste0("At ", pp,
+               " knots below polar targets, this was a humbling outing. The boat\u2019s potential went largely unrealized \u2014 ",
+               "like owning a sports car and getting stuck in traffic."),
+        paste0(pp, " knots under target \u2014 a significant gap between what the polars promised and what the day delivered. ",
+               "But as John A. Shedd noted, \u201ca ship in harbor is safe, but that is not what ships are built for.\u201d Wings showed up.")
+      ), "polar")
     }
     sp <- c(sp, ptxt)
   }
@@ -425,49 +629,103 @@ generate_race_narrative <- function(race_row, completed_races) {
   wp <- character()
 
   if (!is.na(race_row$avg_tws) && !is.nan(race_row$avg_tws)) {
-    wd <- if (race_row$avg_tws < 5)
-            "a drifter \u2014 the kind of day where you can hear the barnacles growing on the hull"
-          else if (race_row$avg_tws < 8)
-            "light air that tested the crew\u2019s patience like a DMV waiting room \u2014 only with better scenery"
-          else if (race_row$avg_tws < 12)
-            "a solid working breeze \u2014 the Goldilocks zone of racing conditions"
-          else if (race_row$avg_tws < 18)
-            "a healthy blow that kept everyone earning their rum rations"
-          else "heavy air that separated the bold from the seasick"
+    drifter_opts <- c(
+      "a drifter \u2014 the kind of day where you can hear the barnacles growing on the hull",
+      "barely a whisper of wind \u2014 the sails hung like laundry and the crew practiced their patience",
+      "a parking lot \u2014 the kind of conditions where the best strategy is to bring a good book",
+      "glass-calm misery disguised as a race \u2014 the wind gods were clearly on vacation"
+    )
+    light_opts <- c(
+      "light air that tested the crew\u2019s patience like a DMV waiting room \u2014 only with better scenery",
+      "a zephyr at best \u2014 the kind of breeze that rewards finesse over horsepower",
+      "gossamer conditions that demanded featherweight touch on the helm and the patience of a monk",
+      "the definition of a \u2018tactician\u2019s day\u2019 \u2014 every puff was a decision and every lull a test"
+    )
+    working_opts <- c(
+      "a solid working breeze \u2014 the Goldilocks zone of racing conditions",
+      "textbook racing weather \u2014 enough wind to move, not so much that things get exciting in the wrong way",
+      "the sweet spot \u2014 steady breeze, honest sailing, and the kind of conditions that make you glad you own a boat",
+      "pleasant and purposeful wind \u2014 the kind of day that reminds you why you took up sailing in the first place"
+    )
+    fresh_opts <- c(
+      "a healthy blow that kept everyone earning their rum rations",
+      "a stiff breeze that put the boat on its ear and the crew on their toes",
+      "breezy enough to warrant a second look at the reef points \u2014 the wind meant business",
+      "the kind of conditions where the rail meat earns their keep and the foredeck crew earns hazard pay"
+    )
+    heavy_opts <- c(
+      "heavy air that separated the bold from the seasick",
+      "a proper blow \u2014 the kind of wind that rearranges the cockpit and tests every piece of hardware on the boat",
+      "serious breeze that demanded respect, solid seamanship, and a willingness to get very wet",
+      "enough wind to make even experienced sailors double-check the rigging \u2014 Mother Nature was not messing around"
+    )
+
+    wd <- if (race_row$avg_tws < 5) pick_from(drifter_opts, "wind")
+          else if (race_row$avg_tws < 8) pick_from(light_opts, "wind")
+          else if (race_row$avg_tws < 12) pick_from(working_opts, "wind")
+          else if (race_row$avg_tws < 18) pick_from(fresh_opts, "wind")
+          else pick_from(heavy_opts, "wind")
 
     gust <- if (!is.na(race_row$max_tws) && !is.nan(race_row$max_tws))
-              paste0(" with gusts to ", round(race_row$max_tws, 1), " knots")
+              pick_from(c(
+                paste0(" with gusts to ", round(race_row$max_tws, 1), " knots"),
+                paste0(" and puffs hitting ", round(race_row$max_tws, 1), " knots"),
+                paste0(", gusting to ", round(race_row$max_tws, 1))
+              ), "gust")
             else ""
-    wp <- c(wp, paste0("Wind averaged ", round(race_row$avg_tws, 1),
-                       " knots", gust, " \u2014 ", wd, "."))
+
+    wind_frame <- pick_from(c(
+      paste0("Wind averaged ", round(race_row$avg_tws, 1), " knots", gust, " \u2014 ", wd, "."),
+      paste0("The breeze clocked in at ", round(race_row$avg_tws, 1), " knots average", gust, " \u2014 ", wd, "."),
+      paste0("Conditions served up ", round(race_row$avg_tws, 1), " knots of wind on average", gust, ". In other words: ", wd, ".")
+    ), "windframe")
+    wp <- c(wp, wind_frame)
 
     all_tws <- completed_races$avg_tws[!is.na(completed_races$avg_tws) &
                                         !is.nan(completed_races$avg_tws)]
     if (length(all_tws) > 2) {
       tws_pct <- mean(race_row$avg_tws >= all_tws)
-      comp <- if (tws_pct < 0.25)
-                "Relative to the fleet\u2019s history, this was one of the calmer days \u2014 sail trim and boat handling were king."
-              else if (tws_pct > 0.75)
-                "This was one of the windier races in the dataset \u2014 the kind of day where \u201cany fool can carry on, but a wise man knows how to shorten sail in time\u201d (Joseph Conrad)."
+      calm_comp <- c(
+        "Relative to the fleet\u2019s history, this was one of the calmer days \u2014 sail trim and boat handling were king.",
+        "Historically speaking, this ranked among the lighter-air outings \u2014 the kind of day where small gains compound.",
+        "By Wings\u2019 historical standards, this was a mellow affair \u2014 finesse over force."
+      )
+      windy_comp <- c(
+        "This was one of the windier races in the dataset \u2014 the kind of day where \u201cany fool can carry on, but a wise man knows how to shorten sail in time\u201d (Joseph Conrad).",
+        "Historically, this ranks among the breezier outings \u2014 a day where the boat\u2019s limits and the crew\u2019s nerve were both tested.",
+        "By the numbers, this was more wind than Wings usually sees \u2014 the sort of day that produces war stories and sail repair bills."
+      )
+      comp <- if (tws_pct < 0.25) pick_from(calm_comp, "windcomp")
+              else if (tws_pct > 0.75) pick_from(windy_comp, "windcomp")
               else ""
       if (nzchar(comp)) wp <- c(wp, comp)
     }
   }
 
   if (!is.na(race_row$headsail) && nzchar(race_row$headsail)) {
-    wp <- c(wp, paste0("The crew flew the ", race_row$headsail,
-                       " \u2014 chosen with the confidence of someone who checks the forecast twice."))
+    sail_opts <- c(
+      paste0("The crew flew the ", race_row$headsail, " \u2014 chosen with the confidence of someone who checks the forecast twice."),
+      paste0("Up front: the ", race_row$headsail, ". A deliberate choice that said everything about what the crew expected from the sky."),
+      paste0("The ", race_row$headsail, " got the call \u2014 the right tool for the day\u2019s conditions, or at least the crew\u2019s best guess at them."),
+      paste0("Headsail selection: ", race_row$headsail, ". In sailing, as in life, half the battle is showing up with the right gear.")
+    )
+    wp <- c(wp, pick_from(sail_opts, "headsail"))
   }
 
   if (!is.na(race_row$helm) && nzchar(race_row$helm)) {
-    wp <- c(wp, paste0(race_row$helm,
-                       " had the helm and the final say on which way the bow pointed."))
+    helm_opts <- c(
+      paste0(race_row$helm, " had the helm and the final say on which way the bow pointed."),
+      paste0("At the wheel: ", race_row$helm, " \u2014 steering with conviction and hopefully a compass."),
+      paste0(race_row$helm, " drove \u2014 every tack, every gybe, every lane change negotiated from behind the wheel."),
+      paste0("The helm belonged to ", race_row$helm, " today, who guided Wings through whatever the bay threw their way.")
+    )
+    wp <- c(wp, pick_from(helm_opts, "helm"))
   }
 
   if (length(wp) > 0) paragraphs <- c(paragraphs, paste(wp, collapse = " "))
 
   # ---- Closing quote ----
-  quote <- pick_quote(paste0(race_name, race_date))
+  quote <- pick_from(maritime_quotes, "closingquote")
   paragraphs <- c(paragraphs, quote)
 
   paste(paragraphs, collapse = "\n\n")
@@ -1650,6 +1908,8 @@ a.social-yt-link:hover {
     tabPanel(
       "Race Seasons",
       br(),
+      tags$p("June through May Seasons",
+             style = "font-size: 0.85em; color: rgba(255,255,255,0.55); margin-bottom: 6px; font-style: italic;"),
       div(
         style = "
       background: rgba(255,255,255,0.04);
@@ -2180,8 +2440,8 @@ server <- function(input, output, session) {
       summarise(
         Races   = n(),
         Days    = n_distinct(as.Date(start)),
-        `Avg Place` = {pn <- suppressWarnings(as.numeric(place)); if (all(is.na(pn))) NA_real_ else round(mean(pn, na.rm = TRUE), 1)},
-        `Avg Fleet` = {fn <- suppressWarnings(as.numeric(fleet)); if (all(is.na(fn))) NA_real_ else round(mean(fn, na.rm = TRUE), 1)},
+        .avg_place = {pn <- suppressWarnings(as.numeric(place)); if (all(is.na(pn))) NA_real_ else round(mean(pn, na.rm = TRUE), 1)},
+        .avg_fleet = {fn <- suppressWarnings(as.numeric(fleet)); if (all(is.na(fn))) NA_real_ else round(mean(fn, na.rm = TRUE), 1)},
         Length      = round(sum(length, na.rm = TRUE), 1),
         Hours       = round(sum(duration_hrs, na.rm = TRUE), 1),
         `Avg STW`   = if (all(is.na(avg_stw))) NA_real_ else round(mean(avg_stw, na.rm = TRUE), 1),
@@ -2190,9 +2450,17 @@ server <- function(input, output, session) {
         `Polar Perf` = if (all(is.na(polar_perf_stw))) NA_real_ else round(mean(polar_perf_stw, na.rm = TRUE), 2),
         `NMEA Pts`  = sum(nmea_count),
         .groups = "drop"
-      )
+      ) |>
+      mutate(
+        `Place/Fleet/%` = ifelse(
+          is.na(.avg_place) | is.na(.avg_fleet), NA_character_,
+          paste0(.avg_place, " / ", .avg_fleet, " / ", round(.avg_place / .avg_fleet * 100), "%")
+        ),
+        .before = Length
+      ) |>
+      select(-`.avg_place`, -`.avg_fleet`)
     
-    avg_cols <- c("Avg Place", "Avg Fleet", "Avg STW", "Polar Perf")
+    avg_cols <- c("Avg STW", "Polar Perf")
     max_cols <- c("Max STW", "Max TWS")
     sum_int_cols <- c("Races", "Days")
     
@@ -2207,18 +2475,39 @@ server <- function(input, output, session) {
               options = list(
                 dom = "t", ordering = FALSE,
                 columnDefs = list(
-                  list(className = "dt-right", targets = ncol(summary_df) - 1)
+                  list(className = "dt-right", targets = ncol(summary_df) - 1),
+                  list(className = "dt-center", targets = which(names(summary_df) == "Place/Fleet/%") - 1)
                 ),
                 footerCallback = DT::JS("
                   function(row, data, start, end, display) {
                     var api = this.api();
                     var ncols = api.columns().count();
-                    var avgCols = ['Avg Place', 'Avg Fleet', 'Avg STW', 'Polar Perf'];
+                    var avgCols = ['Avg STW', 'Polar Perf'];
                     var maxCols = ['Max STW', 'Max TWS'];
                     var sumIntCols = ['Races', 'Days'];
                     $(api.column(0).footer()).html('Total');
                     for (var col = 1; col < ncols; col++) {
                       var header = $(api.column(col).header()).text();
+                      if (header === 'Place/Fleet/%') {
+                        var places = [], fleets = [];
+                        api.column(col, {page:'current'}).data().each(function(v) {
+                          var parts = String(v).split('/');
+                          if (parts.length >= 2) {
+                            var p = parseFloat(parts[0].trim());
+                            var f = parseFloat(parts[1].trim());
+                            if (!isNaN(p) && !isNaN(f)) { places.push(p); fleets.push(f); }
+                          }
+                        });
+                        if (places.length) {
+                          var ap = (places.reduce(function(a,b){return a+b;},0)/places.length).toFixed(1);
+                          var af = (fleets.reduce(function(a,b){return a+b;},0)/fleets.length).toFixed(1);
+                          var pct = Math.round(ap / af * 100);
+                          $(api.column(col).footer()).html(ap + ' / ' + af + ' / ' + pct + '%');
+                        } else {
+                          $(api.column(col).footer()).html('');
+                        }
+                        continue;
+                      }
                       var vals = [];
                       api.column(col, {page:'current'}).data().each(function(v) {
                         var x = parseFloat(String(v).replace(/,/g,''));
@@ -2245,7 +2534,7 @@ server <- function(input, output, session) {
                 ")
               ),
               rownames = FALSE) |>
-      formatRound(columns = c("Avg Place", "Avg Fleet", "Length", "Hours", "Avg STW", "Max STW", "Max TWS"), digits = 1) |>
+      formatRound(columns = c("Length", "Hours", "Avg STW", "Max STW", "Max TWS"), digits = 1) |>
       formatRound(columns = "Polar Perf", digits = 2) |>
       formatRound(columns = "NMEA Pts", digits = 0)
   })
@@ -2264,8 +2553,8 @@ server <- function(input, output, session) {
       summarise(
         Races   = n(),
         Days    = n_distinct(as.Date(start)),
-        `Avg Place` = {pn <- suppressWarnings(as.numeric(place)); if (all(is.na(pn))) NA_real_ else round(mean(pn, na.rm = TRUE), 1)},
-        `Avg Fleet` = {fn <- suppressWarnings(as.numeric(fleet)); if (all(is.na(fn))) NA_real_ else round(mean(fn, na.rm = TRUE), 1)},
+        .avg_place = {pn <- suppressWarnings(as.numeric(place)); if (all(is.na(pn))) NA_real_ else round(mean(pn, na.rm = TRUE), 1)},
+        .avg_fleet = {fn <- suppressWarnings(as.numeric(fleet)); if (all(is.na(fn))) NA_real_ else round(mean(fn, na.rm = TRUE), 1)},
         Length      = round(sum(length, na.rm = TRUE), 1),
         Hours       = round(sum(duration_hrs, na.rm = TRUE), 1),
         `Avg STW`   = if (all(is.na(avg_stw))) NA_real_ else round(mean(avg_stw, na.rm = TRUE), 1),
@@ -2274,7 +2563,15 @@ server <- function(input, output, session) {
         `Polar Perf` = if (all(is.na(polar_perf_stw))) NA_real_ else round(mean(polar_perf_stw, na.rm = TRUE), 2),
         `NMEA Pts`  = sum(nmea_count),
         .groups = "drop"
-      )
+      ) |>
+      mutate(
+        `Place/Fleet/%` = ifelse(
+          is.na(.avg_place) | is.na(.avg_fleet), NA_character_,
+          paste0(.avg_place, " / ", .avg_fleet, " / ", round(.avg_place / .avg_fleet * 100), "%")
+        ),
+        .before = Length
+      ) |>
+      select(-`.avg_place`, -`.avg_fleet`)
     
     sketch <- htmltools::withTags(table(
       class = "display",
@@ -2287,18 +2584,39 @@ server <- function(input, output, session) {
               options = list(
                 dom = "t", ordering = FALSE,
                 columnDefs = list(
-                  list(className = "dt-right", targets = ncol(summary_df) - 1)
+                  list(className = "dt-right", targets = ncol(summary_df) - 1),
+                  list(className = "dt-center", targets = which(names(summary_df) == "Place/Fleet/%") - 1)
                 ),
                 footerCallback = DT::JS("
                   function(row, data, start, end, display) {
                     var api = this.api();
                     var ncols = api.columns().count();
-                    var avgCols = ['Avg Place', 'Avg Fleet', 'Avg STW', 'Polar Perf'];
+                    var avgCols = ['Avg STW', 'Polar Perf'];
                     var maxCols = ['Max STW', 'Max TWS'];
                     var sumIntCols = ['Races', 'Days'];
                     $(api.column(0).footer()).html('Total');
                     for (var col = 1; col < ncols; col++) {
                       var header = $(api.column(col).header()).text();
+                      if (header === 'Place/Fleet/%') {
+                        var places = [], fleets = [];
+                        api.column(col, {page:'current'}).data().each(function(v) {
+                          var parts = String(v).split('/');
+                          if (parts.length >= 2) {
+                            var p = parseFloat(parts[0].trim());
+                            var f = parseFloat(parts[1].trim());
+                            if (!isNaN(p) && !isNaN(f)) { places.push(p); fleets.push(f); }
+                          }
+                        });
+                        if (places.length) {
+                          var ap = (places.reduce(function(a,b){return a+b;},0)/places.length).toFixed(1);
+                          var af = (fleets.reduce(function(a,b){return a+b;},0)/fleets.length).toFixed(1);
+                          var pct = Math.round(ap / af * 100);
+                          $(api.column(col).footer()).html(ap + ' / ' + af + ' / ' + pct + '%');
+                        } else {
+                          $(api.column(col).footer()).html('');
+                        }
+                        continue;
+                      }
                       var vals = [];
                       api.column(col, {page:'current'}).data().each(function(v) {
                         var x = parseFloat(String(v).replace(/,/g,''));
@@ -2325,7 +2643,7 @@ server <- function(input, output, session) {
                 ")
               ),
               rownames = FALSE) |>
-      formatRound(columns = c("Avg Place", "Avg Fleet", "Length", "Hours", "Avg STW", "Max STW", "Max TWS"), digits = 1) |>
+      formatRound(columns = c("Length", "Hours", "Avg STW", "Max STW", "Max TWS"), digits = 1) |>
       formatRound(columns = "Polar Perf", digits = 2) |>
       formatRound(columns = "NMEA Pts", digits = 0)
   })
@@ -2343,8 +2661,12 @@ server <- function(input, output, session) {
         Date       = format(as.Date(start), "%m/%d/%Y"),
         Series     = ifelse(is.na(series) | series == "", "", series),
         Race       = race,
-        Place      = ifelse(is.na(place) | place == "", "", place),
-        Fleet      = ifelse(is.na(fleet), "", as.character(as.integer(fleet))),
+        .place_num = suppressWarnings(as.numeric(place)),
+        .fleet_num = suppressWarnings(as.numeric(fleet)),
+        `Place/Fleet/%` = ifelse(
+          is.na(.place_num) | is.na(.fleet_num), "",
+          paste0(as.integer(.place_num), " / ", as.integer(.fleet_num), " / ", round(.place_num / .fleet_num * 100), "%")
+        ),
         Days       = days_on_water,
         Length     = ifelse(is.na(length), NA_real_, round(length, 1)),
         Hours      = ifelse(is.na(duration_hrs), NA_real_, round(duration_hrs, 1)),
@@ -2353,7 +2675,10 @@ server <- function(input, output, session) {
         `Max TWS`    = ifelse(is.na(max_tws), NA_real_, round(max_tws, 1)),
         `Polar Perf` = ifelse(is.na(polar_perf_stw), NA_real_, round(polar_perf_stw, 2)),
         `NMEA Pts`   = nmea_count
-      )
+      ) |>
+      select(-`.place_num`, -`.fleet_num`)
+    
+    pfp_col <- which(names(res) == "Place/Fleet/%") - 1
     
     sketch <- htmltools::withTags(table(
       class = "display",
@@ -2369,7 +2694,8 @@ server <- function(input, output, session) {
         dom = "t",
         pageLength = 100,
         columnDefs = list(
-          list(className = "dt-right", targets = c(4, 5, 6, 7, 8, 9, 10, 11, 12, 13))
+          list(className = "dt-center", targets = pfp_col),
+          list(className = "dt-right", targets = setdiff(seq(pfp_col, ncol(res) - 1), pfp_col))
         ),
         footerCallback = DT::JS("
           function(row, data, start, end, display) {
@@ -2382,10 +2708,28 @@ server <- function(input, output, session) {
             $(api.column(1).footer()).html('');
             $(api.column(2).footer()).html('');
             $(api.column(3).footer()).html('Total');
-            $(api.column(4).footer()).html('');
-            $(api.column(5).footer()).html('');
-            for (var col = 6; col < ncols; col++) {
+            for (var col = 4; col < ncols; col++) {
               var header = $(api.column(col).header()).text();
+              if (header === 'Place/Fleet/%') {
+                var places = [], fleets = [];
+                api.column(col, {page:'current'}).data().each(function(v) {
+                  var parts = String(v).split('/');
+                  if (parts.length >= 2) {
+                    var p = parseFloat(parts[0].trim());
+                    var f = parseFloat(parts[1].trim());
+                    if (!isNaN(p) && !isNaN(f)) { places.push(p); fleets.push(f); }
+                  }
+                });
+                if (places.length) {
+                  var ap = (places.reduce(function(a,b){return a+b;},0)/places.length).toFixed(1);
+                  var af = (fleets.reduce(function(a,b){return a+b;},0)/fleets.length).toFixed(1);
+                  var pct = Math.round(ap / af * 100);
+                  $(api.column(col).footer()).html(ap + ' / ' + af + ' / ' + pct + '%');
+                } else {
+                  $(api.column(col).footer()).html('');
+                }
+                continue;
+              }
               var vals = [];
               api.column(col, {page:'current'}).data().each(function(v) {
                 var x = parseFloat(String(v).replace(/,/g,''));
