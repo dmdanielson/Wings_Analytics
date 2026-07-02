@@ -4,7 +4,7 @@
 .httr-oauth
 .DS_Store
 .quarto
-.positai
+.posit/assistant
 
 /.quarto/
 **/*.quarto_ipynb

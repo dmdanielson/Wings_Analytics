@@ -2442,7 +2442,7 @@ server <- function(input, output, session) {
         Days    = n_distinct(as.Date(start)),
         .avg_place = {pn <- suppressWarnings(as.numeric(place)); if (all(is.na(pn))) NA_real_ else round(mean(pn, na.rm = TRUE), 1)},
         .avg_fleet = {fn <- suppressWarnings(as.numeric(fleet)); if (all(is.na(fn))) NA_real_ else round(mean(fn, na.rm = TRUE), 1)},
-        Length      = round(sum(length, na.rm = TRUE), 1),
+        NM          = round(sum(length, na.rm = TRUE), 1),
         Hours       = round(sum(duration_hrs, na.rm = TRUE), 1),
         `Avg STW`   = if (all(is.na(avg_stw))) NA_real_ else round(mean(avg_stw, na.rm = TRUE), 1),
         `Max STW`   = if (all(is.na(max_stw))) NA_real_ else round(max(max_stw, na.rm = TRUE), 1),
@@ -2452,13 +2452,14 @@ server <- function(input, output, session) {
         .groups = "drop"
       ) |>
       mutate(
-        `Place/Fleet/%` = ifelse(
+        `Place / Fleet / %` = ifelse(
           is.na(.avg_place) | is.na(.avg_fleet), NA_character_,
           paste0(.avg_place, " / ", .avg_fleet, " / ", round(.avg_place / .avg_fleet * 100), "%")
         ),
-        .before = Length
+        .before = NM
       ) |>
-      select(-`.avg_place`, -`.avg_fleet`)
+      select(-`.avg_place`, -`.avg_fleet`) |>
+      relocate(Hours, .before = `Place / Fleet / %`)
     
     avg_cols <- c("Avg STW", "Polar Perf")
     max_cols <- c("Max STW", "Max TWS")
@@ -2476,7 +2477,7 @@ server <- function(input, output, session) {
                 dom = "t", ordering = FALSE,
                 columnDefs = list(
                   list(className = "dt-right", targets = ncol(summary_df) - 1),
-                  list(className = "dt-center", targets = which(names(summary_df) == "Place/Fleet/%") - 1)
+                  list(className = "dt-center", targets = which(names(summary_df) == "Place / Fleet / %") - 1)
                 ),
                 footerCallback = DT::JS("
                   function(row, data, start, end, display) {
@@ -2488,7 +2489,7 @@ server <- function(input, output, session) {
                     $(api.column(0).footer()).html('Total');
                     for (var col = 1; col < ncols; col++) {
                       var header = $(api.column(col).header()).text();
-                      if (header === 'Place/Fleet/%') {
+                      if (header === 'Place / Fleet / %') {
                         var places = [], fleets = [];
                         api.column(col, {page:'current'}).data().each(function(v) {
                           var parts = String(v).split('/');
@@ -2534,7 +2535,7 @@ server <- function(input, output, session) {
                 ")
               ),
               rownames = FALSE) |>
-      formatRound(columns = c("Length", "Hours", "Avg STW", "Max STW", "Max TWS"), digits = 1) |>
+      formatRound(columns = c("NM", "Hours", "Avg STW", "Max STW", "Max TWS"), digits = 1) |>
       formatRound(columns = "Polar Perf", digits = 2) |>
       formatRound(columns = "NMEA Pts", digits = 0)
   })
@@ -2555,7 +2556,7 @@ server <- function(input, output, session) {
         Days    = n_distinct(as.Date(start)),
         .avg_place = {pn <- suppressWarnings(as.numeric(place)); if (all(is.na(pn))) NA_real_ else round(mean(pn, na.rm = TRUE), 1)},
         .avg_fleet = {fn <- suppressWarnings(as.numeric(fleet)); if (all(is.na(fn))) NA_real_ else round(mean(fn, na.rm = TRUE), 1)},
-        Length      = round(sum(length, na.rm = TRUE), 1),
+        NM          = round(sum(length, na.rm = TRUE), 1),
         Hours       = round(sum(duration_hrs, na.rm = TRUE), 1),
         `Avg STW`   = if (all(is.na(avg_stw))) NA_real_ else round(mean(avg_stw, na.rm = TRUE), 1),
         `Max STW`   = if (all(is.na(max_stw))) NA_real_ else round(max(max_stw, na.rm = TRUE), 1),
@@ -2565,13 +2566,14 @@ server <- function(input, output, session) {
         .groups = "drop"
       ) |>
       mutate(
-        `Place/Fleet/%` = ifelse(
+        `Place / Fleet / %` = ifelse(
           is.na(.avg_place) | is.na(.avg_fleet), NA_character_,
           paste0(.avg_place, " / ", .avg_fleet, " / ", round(.avg_place / .avg_fleet * 100), "%")
         ),
-        .before = Length
+        .before = NM
       ) |>
-      select(-`.avg_place`, -`.avg_fleet`)
+      select(-`.avg_place`, -`.avg_fleet`) |>
+      relocate(Hours, .before = `Place / Fleet / %`)
     
     sketch <- htmltools::withTags(table(
       class = "display",
@@ -2585,7 +2587,7 @@ server <- function(input, output, session) {
                 dom = "t", ordering = FALSE,
                 columnDefs = list(
                   list(className = "dt-right", targets = ncol(summary_df) - 1),
-                  list(className = "dt-center", targets = which(names(summary_df) == "Place/Fleet/%") - 1)
+                  list(className = "dt-center", targets = which(names(summary_df) == "Place / Fleet / %") - 1)
                 ),
                 footerCallback = DT::JS("
                   function(row, data, start, end, display) {
@@ -2597,7 +2599,7 @@ server <- function(input, output, session) {
                     $(api.column(0).footer()).html('Total');
                     for (var col = 1; col < ncols; col++) {
                       var header = $(api.column(col).header()).text();
-                      if (header === 'Place/Fleet/%') {
+                      if (header === 'Place / Fleet / %') {
                         var places = [], fleets = [];
                         api.column(col, {page:'current'}).data().each(function(v) {
                           var parts = String(v).split('/');
@@ -2643,7 +2645,7 @@ server <- function(input, output, session) {
                 ")
               ),
               rownames = FALSE) |>
-      formatRound(columns = c("Length", "Hours", "Avg STW", "Max STW", "Max TWS"), digits = 1) |>
+      formatRound(columns = c("NM", "Hours", "Avg STW", "Max STW", "Max TWS"), digits = 1) |>
       formatRound(columns = "Polar Perf", digits = 2) |>
       formatRound(columns = "NMEA Pts", digits = 0)
   })
@@ -2663,22 +2665,23 @@ server <- function(input, output, session) {
         Race       = race,
         .place_num = suppressWarnings(as.numeric(place)),
         .fleet_num = suppressWarnings(as.numeric(fleet)),
-        `Place/Fleet/%` = ifelse(
+        `Place / Fleet / %` = ifelse(
           is.na(.place_num) | is.na(.fleet_num), "",
           paste0(as.integer(.place_num), " / ", as.integer(.fleet_num), " / ", round(.place_num / .fleet_num * 100), "%")
         ),
         Days       = days_on_water,
-        Length     = ifelse(is.na(length), NA_real_, round(length, 1)),
         Hours      = ifelse(is.na(duration_hrs), NA_real_, round(duration_hrs, 1)),
+        NM         = ifelse(is.na(length), NA_real_, round(length, 1)),
         `Avg STW`    = ifelse(is.na(avg_stw), NA_real_, round(avg_stw, 1)),
         `Max STW`    = ifelse(is.na(max_stw), NA_real_, round(max_stw, 1)),
         `Max TWS`    = ifelse(is.na(max_tws), NA_real_, round(max_tws, 1)),
         `Polar Perf` = ifelse(is.na(polar_perf_stw), NA_real_, round(polar_perf_stw, 2)),
         `NMEA Pts`   = nmea_count
       ) |>
-      select(-`.place_num`, -`.fleet_num`)
+      select(-`.place_num`, -`.fleet_num`) |>
+      relocate(Days, Hours, .before = `Place / Fleet / %`)
     
-    pfp_col <- which(names(res) == "Place/Fleet/%") - 1
+    pfp_col <- which(names(res) == "Place / Fleet / %") - 1
     
     sketch <- htmltools::withTags(table(
       class = "display",
@@ -2710,7 +2713,7 @@ server <- function(input, output, session) {
             $(api.column(3).footer()).html('Total');
             for (var col = 4; col < ncols; col++) {
               var header = $(api.column(col).header()).text();
-              if (header === 'Place/Fleet/%') {
+              if (header === 'Place / Fleet / %') {
                 var places = [], fleets = [];
                 api.column(col, {page:'current'}).data().each(function(v) {
                   var parts = String(v).split('/');
@@ -2757,7 +2760,7 @@ server <- function(input, output, session) {
       ),
       rownames = FALSE
     ) |>
-      formatRound(columns = c("Length", "Hours", "Avg STW", "Max STW", "Max TWS"), digits = 1) |>
+      formatRound(columns = c("NM", "Hours", "Avg STW", "Max STW", "Max TWS"), digits = 1) |>
       formatRound(columns = "Polar Perf", digits = 2) |>
       formatRound(columns = "NMEA Pts", digits = 0)
   })
