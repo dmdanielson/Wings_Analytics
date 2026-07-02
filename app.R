@@ -206,6 +206,15 @@ nearest_sync_by_line_index <- function(df, track_clean) {
   df
 }
 
+# Snap each value in x to the nearest element in grid (vectorized).
+# Returns integer indices into grid.
+snap_nearest_idx <- function(x, grid) {
+  idx_left  <- findInterval(x, grid, all.inside = TRUE)
+  idx_right <- pmin(idx_left + 1L, length(grid))
+  closer_right <- abs(x - grid[idx_right]) < abs(x - grid[idx_left])
+  ifelse(closer_right, idx_right, idx_left)
+}
+
 excel_to_posix_local <- function(x) {
   if (inherits(x, "POSIXct") || inherits(x, "POSIXt")) {
     return(lubridate::force_tz(x, tzone = LOCAL_TZ))
@@ -1317,8 +1326,10 @@ rebuild_rds_from_raw <- function() {
     wind_for_polar <- track_all_init |>
       filter(!is.na(tws_knots), !is.na(twa_deg)) |>
       mutate(
-        tws_idx   = findInterval(tws_knots, polar_tws_vals, all.inside = TRUE),
-        twa_idx   = findInterval(twa_deg,  polar_twa_vals, all.inside = TRUE),
+        # Fold TWA to 0-180 (port/starboard symmetric)
+        twa_folded = ifelse(twa_deg > 180, 360 - twa_deg, twa_deg),
+        tws_idx   = snap_nearest_idx(tws_knots, polar_tws_vals),
+        twa_idx   = snap_nearest_idx(twa_folded, polar_twa_vals),
         tws_match = polar_tws_vals[tws_idx],
         twa_match = polar_twa_vals[twa_idx]
       ) |>
@@ -1489,6 +1500,14 @@ track_all_loaded <- track_all_loaded |>
   select(-tele_dist_prev_m, -tele_dist_next_m, -tele_dt_prev_s, -tele_dt_next_s,
          -tele_spd_prev_kn, -tele_spd_next_kn)
 
+# Pre-compute UI display columns once at startup (avoids re-deriving in reactive)
+track_all_loaded <- track_all_loaded |>
+  mutate(
+    day_local_ui = as.Date(datetime_local, tz = LOCAL_TZ),
+    helm_ui      = ifelse(!is.na(helm) & nzchar(helm), helm, "(blank)"),
+    race_ui      = ifelse(!is.na(race) & nzchar(race), race, "(blank)")
+  )
+
 # Filter out future races (races that haven't started yet)
 now_local <- lubridate::with_tz(Sys.time(), LOCAL_TZ)
 if (nrow(race_calendar_loaded) > 0) {
@@ -1534,6 +1553,13 @@ ra_default_race_choices <- if (nrow(ra_default_race_list) > 0) {
 # ---------- UI ----------
 ui <- fluidPage(
   tags$head(
+    # Open Graph meta tags for link previews when URL is shared
+    tags$meta(property = "og:title", content = "Wings Analytics"),
+    tags$meta(property = "og:description", content = "AI-Inspired Sailing Performance & Racing Intelligence"),
+    tags$meta(property = "og:image", content = "https://dmdanielson.shinyapps.io/Wings_Analytics/og_image.png"),
+    tags$meta(property = "og:type", content = "website"),
+    tags$meta(property = "og:url", content = "https://dmdanielson.shinyapps.io/Wings_Analytics/"),
+    tags$meta(name = "twitter:card", content = "summary_large_image"),
     tags$style(HTML("
       /* ===== Global app look (performance / tech) ===== */
       body {
@@ -1665,6 +1691,20 @@ ui <- fluidPage(
         font-size: 14px !important;
       }
       .dataTables_wrapper .dataTables_info { color: rgba(232,237,246,0.65) !important; }
+
+      /* Force aligned columns across the 3 Race Seasons tables */
+      #season_summary_table table.dataTable,
+      #season_series_summary_table table.dataTable,
+      #season_table table.dataTable {
+        table-layout: fixed !important;
+        width: 100% !important;
+      }
+      /* Allow Race column text to wrap in the detail table */
+      #season_table table.dataTable td:nth-child(2) {
+        white-space: normal;
+        word-wrap: break-word;
+        overflow-wrap: break-word;
+      }
 
 /* Leaflet border polish */
 .leaflet-container {
@@ -1986,6 +2026,114 @@ a.social-yt-link:hover {
         tabPanel("Reference Polars",      DTOutput("polar_table_ref")),
         tabPanel("STW Polar Performance", DTOutput("polar_table_perf_stw")),
         tabPanel("SOG Polar Performance", DTOutput("polar_table_perf_sog"))
+      )
+    ),
+    tabPanel(
+      "Boat Performance",
+      br(),
+      tags$p("ORC Speed Guide for Wings J112E",
+             style = "font-size: 0.85em; color: rgba(255,255,255,0.55); margin-bottom: 6px; font-style: italic;"),
+      div(
+        style = "
+          background: rgba(255,255,255,0.04);
+          border: 1px solid rgba(255,255,255,0.10);
+          border-radius: 16px;
+          padding: 18px;
+        ",
+        tabsetPanel(
+          tabPanel("All Wind Speeds",
+            tags$p("This polar diagram overlays target boat speeds for all wind conditions (6\u201324 knots TWS) on a single chart. ",
+                   "Each curve represents a different true wind speed, plotted by wind angle (TWA) and target speed (in knots). ",
+                   "The farther a curve extends from the center, the faster the boat should be sailing at that angle. ",
+                   "Use this view to compare how the boat\u2019s speed potential changes across wind strengths and angles.",
+                   style = "font-size: 0.85em; color: rgba(255,255,255,0.55); margin-bottom: 10px; line-height: 1.5;"),
+            tags$iframe(src = "speed_guide_1.html", width = "100%", height = "900px", style = "border:none; background:white; border-radius:8px;")
+          ),
+          tabPanel("TWS 6 kts",
+            tags$p("Polar diagram for 6 knots of true wind speed \u2014 light air conditions. ",
+                   "The curves show target boat speed by wind angle for each sail configuration. ",
+                   "In these conditions, boat speed is modest and sail selection is critical to maintaining momentum.",
+                   style = "font-size: 0.85em; color: rgba(255,255,255,0.55); margin-bottom: 10px; line-height: 1.5;"),
+            tags$iframe(src = "speed_guide_2.html", width = "100%", height = "900px", style = "border:none; background:white; border-radius:8px;")
+          ),
+          tabPanel("TWS 8 kts",
+            tags$p("Polar diagram for 8 knots of true wind speed \u2014 a light to moderate breeze. ",
+                   "The boat begins to develop more speed, and the differences between sail configurations become more pronounced. ",
+                   "Optimal angles for upwind and downwind VMG start to become clearer at this wind speed.",
+                   style = "font-size: 0.85em; color: rgba(255,255,255,0.55); margin-bottom: 10px; line-height: 1.5;"),
+            tags$iframe(src = "speed_guide_3.html", width = "100%", height = "900px", style = "border:none; background:white; border-radius:8px;")
+          ),
+          tabPanel("TWS 10 kts",
+            tags$p("Polar diagram for 10 knots of true wind speed \u2014 a moderate working breeze. ",
+                   "This is a common racing condition where the J112E is well-powered and sail trim becomes the primary performance differentiator. ",
+                   "The polar curves show increasing separation between sail configurations, especially downwind.",
+                   style = "font-size: 0.85em; color: rgba(255,255,255,0.55); margin-bottom: 10px; line-height: 1.5;"),
+            tags$iframe(src = "speed_guide_4.html", width = "100%", height = "900px", style = "border:none; background:white; border-radius:8px;")
+          ),
+          tabPanel("TWS 12 kts",
+            tags$p("Polar diagram for 12 knots of true wind speed \u2014 solid medium-air conditions. ",
+                   "The boat is reaching target hull speed upwind and generating strong downwind angles. ",
+                   "This wind range often produces the best VMG performance for the J112E.",
+                   style = "font-size: 0.85em; color: rgba(255,255,255,0.55); margin-bottom: 10px; line-height: 1.5;"),
+            tags$iframe(src = "speed_guide_5.html", width = "100%", height = "900px", style = "border:none; background:white; border-radius:8px;")
+          ),
+          tabPanel("TWS 14 kts",
+            tags$p("Polar diagram for 14 knots of true wind speed \u2014 the upper end of the medium-air range. ",
+                   "The boat is fully powered up and may require depowering techniques upwind. ",
+                   "Downwind targets increase, and sail selection between asymmetric configurations matters more.",
+                   style = "font-size: 0.85em; color: rgba(255,255,255,0.55); margin-bottom: 10px; line-height: 1.5;"),
+            tags$iframe(src = "speed_guide_6.html", width = "100%", height = "900px", style = "border:none; background:white; border-radius:8px;")
+          ),
+          tabPanel("TWS 16 kts",
+            tags$p("Polar diagram for 16 knots of true wind speed \u2014 fresh breeze conditions. ",
+                   "The boat is overpowered on some points of sail. Upwind target angles may widen as the crew works to keep the boat flat. ",
+                   "Downwind, a reduced-hoist asymmetric (75%) may outperform the full hoist in these conditions.",
+                   style = "font-size: 0.85em; color: rgba(255,255,255,0.55); margin-bottom: 10px; line-height: 1.5;"),
+            tags$iframe(src = "speed_guide_7.html", width = "100%", height = "900px", style = "border:none; background:white; border-radius:8px;")
+          ),
+          tabPanel("TWS 20 kts",
+            tags$p("Polar diagram for 20 knots of true wind speed \u2014 heavy air. ",
+                   "The crew is managing loads and the boat is at or near maximum speed potential. ",
+                   "Upwind performance plateaus while downwind speeds continue to climb. Sail selection and depowering are critical.",
+                   style = "font-size: 0.85em; color: rgba(255,255,255,0.55); margin-bottom: 10px; line-height: 1.5;"),
+            tags$iframe(src = "speed_guide_8.html", width = "100%", height = "900px", style = "border:none; background:white; border-radius:8px;")
+          ),
+          tabPanel("TWS 24 kts",
+            tags$p("Polar diagram for 24 knots of true wind speed \u2014 storm-level racing conditions. ",
+                   "Boat speed is near its maximum, and the focus shifts from speed to control. ",
+                   "The polar shows relatively flat upwind targets with high downwind potential, but real-world performance depends heavily on sea state and crew work.",
+                   style = "font-size: 0.85em; color: rgba(255,255,255,0.55); margin-bottom: 10px; line-height: 1.5;"),
+            tags$iframe(src = "speed_guide_9.html", width = "100%", height = "900px", style = "border:none; background:white; border-radius:8px;")
+          ),
+          tabPanel("Best Performance",
+            tags$p("This table summarizes the boat\u2019s optimal performance targets across all wind speeds. ",
+                   "It includes best VMG (velocity made good) angles and speeds for both upwind and downwind legs, ",
+                   "along with reaching speeds at key wind angles. Use these numbers as benchmarks when evaluating race performance.",
+                   style = "font-size: 0.85em; color: rgba(255,255,255,0.55); margin-bottom: 10px; line-height: 1.5;"),
+            tags$iframe(src = "speed_guide_10.html", width = "100%", height = "900px", style = "border:none; background:white; border-radius:8px;")
+          ),
+          tabPanel("Jib",
+            tags$p("Sail plan and performance tables for the jib \u2014 the primary upwind headsail. ",
+                   "The diagram shows the sail\u2019s dimensions, and the tables list target boat speeds at each combination of true wind speed and wind angle. ",
+                   "The jib is used on all upwind legs and close-reaching angles.",
+                   style = "font-size: 0.85em; color: rgba(255,255,255,0.55); margin-bottom: 10px; line-height: 1.5;"),
+            tags$iframe(src = "speed_guide_11.html", width = "100%", height = "900px", style = "border:none; background:white; border-radius:8px;")
+          ),
+          tabPanel("Asymmetric 75%",
+            tags$p("Sail plan and performance tables for the asymmetric spinnaker at 75% hoist. ",
+                   "This is a reduced-power configuration where the sail is flown at three-quarters of its full luff length. ",
+                   "It is typically used in heavier winds when a full hoist would overpower the boat, providing better control while still maximizing downwind speed.",
+                   style = "font-size: 0.85em; color: rgba(255,255,255,0.55); margin-bottom: 10px; line-height: 1.5;"),
+            tags$iframe(src = "speed_guide_12.html", width = "100%", height = "900px", style = "border:none; background:white; border-radius:8px;")
+          ),
+          tabPanel("Asymmetric 100%",
+            tags$p("Sail plan and performance tables for the asymmetric spinnaker at full (100%) hoist. ",
+                   "This is the maximum sail area configuration, providing the most power for downwind and deep-reaching angles. ",
+                   "It is the preferred setup in light to moderate winds where the crew can handle the full sail area effectively.",
+                   style = "font-size: 0.85em; color: rgba(255,255,255,0.55); margin-bottom: 10px; line-height: 1.5;"),
+            tags$iframe(src = "speed_guide_13.html", width = "100%", height = "900px", style = "border:none; background:white; border-radius:8px;")
+          )
+        )
       )
     ),
     tabPanel(
@@ -2324,13 +2472,7 @@ server <- function(input, output, session) {
   track_all <- reactive({
     df <- data_rds$track_all
     validate(need(nrow(df) > 0, "No track data in RDS file."))
-    
-    df %>%
-      mutate(
-        day_local_ui = as.Date(datetime_local, tz = LOCAL_TZ),
-        helm_ui      = ifelse(!is.na(helm) & nzchar(helm), helm, "(blank)"),
-        race_ui      = ifelse(!is.na(race) & nzchar(race), race, "(blank)")
-      )
+    df
   })
   
   # Update series dropdown when season changes
@@ -2359,11 +2501,7 @@ server <- function(input, output, session) {
     }
     if (nrow(cal) == 0) return(tibble())
     
-    # Build track data subset for NMEA matching
-    track_with_race <- data_rds$track_all |>
-      filter(!is.na(race), nzchar(race))
-    
-    cal |>
+    cal_grouped <- cal |>
       mutate(race_date = as.Date(start)) |>
       group_by(race, race_date) |>
       summarise(
@@ -2382,49 +2520,39 @@ server <- function(input, output, session) {
         duration_hrs = ifelse(!is.na(duration_hrs) & duration_hrs == 0, NA_real_, duration_hrs),
         duration_hrs = round(duration_hrs, 2),
         days_on_water = as.integer(as.Date(end) - as.Date(start)) + 1L
+      )
+    
+    # Vectorized join: match track points to calendar windows in one pass
+    track_with_race <- data_rds$track_all |>
+      filter(!is.na(race), nzchar(race))
+    
+    # Join track to calendar by race name, then filter to time window
+    race_stats <- track_with_race |>
+      inner_join(
+        cal_grouped |> select(race, race_date, start, end),
+        by = "race",
+        relationship = "many-to-many"
       ) |>
-      rowwise() |>
+      filter(datetime_local >= start, datetime_local <= end) |>
+      group_by(race, race_date) |>
+      summarise(
+        nmea_count     = n(),
+        avg_stw        = {v <- stw_knots[!is.na(stw_knots) & stw_knots >= 2]; if (length(v) == 0) NA_real_ else mean(v)},
+        max_stw        = {v <- stw_knots[!is.na(stw_knots) & stw_knots >= 2]; if (length(v) == 0) NA_real_ else max(v)},
+        max_tws        = {v <- tws_knots[!is.na(tws_knots)]; if (length(v) == 0) NA_real_ else max(v)},
+        polar_perf_stw = {v <- Polar_Perf_STW[!is.na(Polar_Perf_STW)]; if (length(v) == 0) NA_real_ else mean(v)},
+        .groups = "drop"
+      )
+    
+    cal_grouped |>
+      left_join(race_stats, by = c("race", "race_date")) |>
       mutate(
-        # Count track data points within each race's time window
-        nmea_idx = list(which(
-          track_with_race$race == race &
-          track_with_race$datetime_local >= start &
-          track_with_race$datetime_local <= end
-        )),
-        nmea_count = length(nmea_idx),
-        avg_stw = if (length(nmea_idx) == 0) NA_real_
-                  else {
-                    stw_vals <- track_with_race$stw_knots[nmea_idx]
-                    stw_vals <- stw_vals[!is.na(stw_vals) & stw_vals >= 2]
-                    if (length(stw_vals) == 0) NA_real_ else mean(stw_vals)
-                  },
-        max_stw = if (length(nmea_idx) == 0) NA_real_
-                  else {
-                    stw_vals <- track_with_race$stw_knots[nmea_idx]
-                    stw_vals <- stw_vals[!is.na(stw_vals) & stw_vals >= 2]
-                    if (length(stw_vals) == 0) NA_real_ else max(stw_vals)
-                  },
-        max_tws = if (length(nmea_idx) == 0) NA_real_
-                  else {
-                    tws_vals <- track_with_race$tws_knots[nmea_idx]
-                    tws_vals <- tws_vals[!is.na(tws_vals)]
-                    if (length(tws_vals) == 0) NA_real_ else max(tws_vals)
-                  },
-        polar_perf_stw = if (length(nmea_idx) == 0) NA_real_
-                  else {
-                    pp_vals <- track_with_race$Polar_Perf_STW[nmea_idx]
-                    pp_vals <- pp_vals[!is.na(pp_vals)]
-                    if (length(pp_vals) == 0) NA_real_ else mean(pp_vals)
-                  }
-      ) |>
-      ungroup() |>
-      mutate(
-        avg_stw = ifelse(is.nan(avg_stw), NA_real_, avg_stw),
-        max_stw = ifelse(is.infinite(max_stw), NA_real_, max_stw),
-        max_tws = ifelse(is.infinite(max_tws), NA_real_, max_tws),
+        nmea_count     = replace_na(nmea_count, 0L),
+        avg_stw        = ifelse(is.nan(avg_stw), NA_real_, avg_stw),
+        max_stw        = ifelse(is.infinite(max_stw), NA_real_, max_stw),
+        max_tws        = ifelse(is.infinite(max_tws), NA_real_, max_tws),
         polar_perf_stw = ifelse(is.nan(polar_perf_stw), NA_real_, polar_perf_stw)
-      ) |>
-      select(-nmea_idx)
+      )
   })
   
   # Season summary table: one row per season
@@ -2454,7 +2582,7 @@ server <- function(input, output, session) {
       mutate(
         `Place / Fleet / %` = ifelse(
           is.na(.avg_place) | is.na(.avg_fleet), NA_character_,
-          paste0(.avg_place, " / ", .avg_fleet, " / ", round(.avg_place / .avg_fleet * 100), "%")
+          paste0(.avg_place, "<br>", .avg_fleet, "<br>", round(.avg_place / .avg_fleet * 100), "%")
         ),
         .before = NM
       ) |>
@@ -2465,16 +2593,24 @@ server <- function(input, output, session) {
     max_cols <- c("Max STW", "Max TWS")
     sum_int_cols <- c("Races", "Days")
     
+    pfp_idx <- which(names(summary_df) == "Place / Fleet / %")
+    header_names <- names(summary_df)
+    header_names[pfp_idx] <- "Place<br>Fleet<br>%"
+    
+    shared_widths <- c("50px","55px","105px","45px","60px","60px","60px","70px","75px")
+    col_widths_season <- c("200px", "60px", shared_widths)
     sketch <- htmltools::withTags(table(
       class = "display",
-      thead(tr(lapply(names(summary_df), th))),
-      tfoot(tr(lapply(names(summary_df), th)))
+      tags$colgroup(lapply(col_widths_season, function(w) tags$col(style = paste0("width:", w)))),
+      thead(tr(lapply(header_names, function(n) th(HTML(n))))),
+      tfoot(tr(lapply(header_names, function(n) th(HTML(n)))))
     ))
     
     datatable(summary_df,
               container = sketch,
+              escape = -(pfp_idx),
               options = list(
-                dom = "t", ordering = FALSE,
+                dom = "t", ordering = FALSE, autoWidth = FALSE,
                 columnDefs = list(
                   list(className = "dt-right", targets = ncol(summary_df) - 1),
                   list(className = "dt-center", targets = which(names(summary_df) == "Place / Fleet / %") - 1)
@@ -2489,13 +2625,15 @@ server <- function(input, output, session) {
                     $(api.column(0).footer()).html('Total');
                     for (var col = 1; col < ncols; col++) {
                       var header = $(api.column(col).header()).text();
-                      if (header === 'Place / Fleet / %') {
+                      if (header.indexOf('Fleet') >= 0) {
                         var places = [], fleets = [];
                         api.column(col, {page:'current'}).data().each(function(v) {
-                          var parts = String(v).split('/');
-                          if (parts.length >= 2) {
-                            var p = parseFloat(parts[0].trim());
-                            var f = parseFloat(parts[1].trim());
+                          var el = $('<div>').html(v);
+                          var txt = el.text();
+                          var parts = txt.match(/[\\d.]+/g);
+                          if (parts && parts.length >= 2) {
+                            var p = parseFloat(parts[0]);
+                            var f = parseFloat(parts[1]);
                             if (!isNaN(p) && !isNaN(f)) { places.push(p); fleets.push(f); }
                           }
                         });
@@ -2503,7 +2641,7 @@ server <- function(input, output, session) {
                           var ap = (places.reduce(function(a,b){return a+b;},0)/places.length).toFixed(1);
                           var af = (fleets.reduce(function(a,b){return a+b;},0)/fleets.length).toFixed(1);
                           var pct = Math.round(ap / af * 100);
-                          $(api.column(col).footer()).html(ap + ' / ' + af + ' / ' + pct + '%');
+                          $(api.column(col).footer()).html(ap + '<br>' + af + '<br>' + pct + '%');
                         } else {
                           $(api.column(col).footer()).html('');
                         }
@@ -2568,26 +2706,34 @@ server <- function(input, output, session) {
       mutate(
         `Place / Fleet / %` = ifelse(
           is.na(.avg_place) | is.na(.avg_fleet), NA_character_,
-          paste0(.avg_place, " / ", .avg_fleet, " / ", round(.avg_place / .avg_fleet * 100), "%")
+          paste0(.avg_place, "<br>", .avg_fleet, "<br>", round(.avg_place / .avg_fleet * 100), "%")
         ),
         .before = NM
       ) |>
       select(-`.avg_place`, -`.avg_fleet`) |>
       relocate(Hours, .before = `Place / Fleet / %`)
     
+    pfp_idx <- which(names(summary_df) == "Place / Fleet / %")
+    header_names <- names(summary_df)
+    header_names[pfp_idx] <- "Place<br>Fleet<br>%"
+    
+    shared_widths <- c("50px","55px","105px","45px","60px","60px","60px","70px","75px")
+    col_widths_series <- c("200px", "60px", shared_widths)
     sketch <- htmltools::withTags(table(
       class = "display",
-      thead(tr(lapply(names(summary_df), th))),
-      tfoot(tr(lapply(names(summary_df), th)))
+      tags$colgroup(lapply(col_widths_series, function(w) tags$col(style = paste0("width:", w)))),
+      thead(tr(lapply(header_names, function(n) th(HTML(n))))),
+      tfoot(tr(lapply(header_names, function(n) th(HTML(n)))))
     ))
     
     datatable(summary_df,
               container = sketch,
+              escape = -(pfp_idx),
               options = list(
-                dom = "t", ordering = FALSE,
+                dom = "t", ordering = FALSE, autoWidth = FALSE,
                 columnDefs = list(
                   list(className = "dt-right", targets = ncol(summary_df) - 1),
-                  list(className = "dt-center", targets = which(names(summary_df) == "Place / Fleet / %") - 1)
+                  list(className = "dt-center", targets = pfp_idx - 1)
                 ),
                 footerCallback = DT::JS("
                   function(row, data, start, end, display) {
@@ -2599,13 +2745,15 @@ server <- function(input, output, session) {
                     $(api.column(0).footer()).html('Total');
                     for (var col = 1; col < ncols; col++) {
                       var header = $(api.column(col).header()).text();
-                      if (header === 'Place / Fleet / %') {
+                      if (header.indexOf('Fleet') >= 0) {
                         var places = [], fleets = [];
                         api.column(col, {page:'current'}).data().each(function(v) {
-                          var parts = String(v).split('/');
-                          if (parts.length >= 2) {
-                            var p = parseFloat(parts[0].trim());
-                            var f = parseFloat(parts[1].trim());
+                          var el = $('<div>').html(v);
+                          var txt = el.text();
+                          var parts = txt.match(/[\\d.]+/g);
+                          if (parts && parts.length >= 2) {
+                            var p = parseFloat(parts[0]);
+                            var f = parseFloat(parts[1]);
                             if (!isNaN(p) && !isNaN(f)) { places.push(p); fleets.push(f); }
                           }
                         });
@@ -2613,7 +2761,7 @@ server <- function(input, output, session) {
                           var ap = (places.reduce(function(a,b){return a+b;},0)/places.length).toFixed(1);
                           var af = (fleets.reduce(function(a,b){return a+b;},0)/fleets.length).toFixed(1);
                           var pct = Math.round(ap / af * 100);
-                          $(api.column(col).footer()).html(ap + ' / ' + af + ' / ' + pct + '%');
+                          $(api.column(col).footer()).html(ap + '<br>' + af + '<br>' + pct + '%');
                         } else {
                           $(api.column(col).footer()).html('');
                         }
@@ -2659,15 +2807,17 @@ server <- function(input, output, session) {
     
     res <- cal_summary |>
       transmute(
-        `#`        = row_number(),
-        Date       = format(as.Date(start), "%m/%d/%Y"),
-        Series     = ifelse(is.na(series) | series == "", "", series),
-        Race       = race,
+        `#` = row_number(),
+        Race = paste0(
+          format(as.Date(start), "%m/%d/%Y"),
+          ifelse(is.na(series) | series == "", "", paste0("<br>", series)),
+          "<br>", race
+        ),
         .place_num = suppressWarnings(as.numeric(place)),
         .fleet_num = suppressWarnings(as.numeric(fleet)),
         `Place / Fleet / %` = ifelse(
           is.na(.place_num) | is.na(.fleet_num), "",
-          paste0(as.integer(.place_num), " / ", as.integer(.fleet_num), " / ", round(.place_num / .fleet_num * 100), "%")
+          paste0(as.integer(.place_num), "<br>", as.integer(.fleet_num), "<br>", round(.place_num / .fleet_num * 100), "%")
         ),
         Days       = days_on_water,
         Hours      = ifelse(is.na(duration_hrs), NA_real_, round(duration_hrs, 1)),
@@ -2682,21 +2832,30 @@ server <- function(input, output, session) {
       relocate(Days, Hours, .before = `Place / Fleet / %`)
     
     pfp_col <- which(names(res) == "Place / Fleet / %") - 1
+    pfp_idx <- pfp_col + 1
+    header_names <- names(res)
+    header_names[pfp_idx] <- "Place<br>Fleet<br>%"
     
+    shared_widths <- c("50px","55px","105px","45px","60px","60px","60px","70px","75px")
+    col_widths_detail <- c("35px", "225px", shared_widths)
     sketch <- htmltools::withTags(table(
       class = "display",
-      thead(tr(lapply(names(res), th))),
-      tfoot(tr(lapply(names(res), th)))
+      tags$colgroup(lapply(col_widths_detail, function(w) tags$col(style = paste0("width:", w)))),
+      thead(tr(lapply(header_names, function(n) th(HTML(n))))),
+      tfoot(tr(lapply(header_names, function(n) th(HTML(n)))))
     ))
     
     datatable(
       res,
       container = sketch,
       selection = "none",
+      escape = c(-2, -pfp_idx),
       options = list(
         dom = "t",
-        pageLength = 100,
+        pageLength = nrow(res),
+        autoWidth = FALSE,
         columnDefs = list(
+          list(className = "dt-left", targets = 0),
           list(className = "dt-center", targets = pfp_col),
           list(className = "dt-right", targets = setdiff(seq(pfp_col, ncol(res) - 1), pfp_col))
         ),
@@ -2707,19 +2866,20 @@ server <- function(input, output, session) {
             var avgCols = ['Avg STW', 'Polar Perf'];
             var maxCols = ['Max STW', 'Max TWS'];
             var sumIntCols = ['Days'];
-            $(api.column(0).footer()).html('');
-            $(api.column(1).footer()).html('');
-            $(api.column(2).footer()).html('');
-            $(api.column(3).footer()).html('Total');
-            for (var col = 4; col < ncols; col++) {
+            var nRaces = api.column(0, {page:'current'}).data().length;
+            $(api.column(0).footer()).html(nRaces);
+            $(api.column(1).footer()).html('Total');
+            for (var col = 2; col < ncols; col++) {
               var header = $(api.column(col).header()).text();
-              if (header === 'Place / Fleet / %') {
+              if (header.indexOf('Fleet') >= 0) {
                 var places = [], fleets = [];
                 api.column(col, {page:'current'}).data().each(function(v) {
-                  var parts = String(v).split('/');
-                  if (parts.length >= 2) {
-                    var p = parseFloat(parts[0].trim());
-                    var f = parseFloat(parts[1].trim());
+                  var el = $('<div>').html(v);
+                  var txt = el.text();
+                  var parts = txt.match(/[\\d.]+/g);
+                  if (parts && parts.length >= 2) {
+                    var p = parseFloat(parts[0]);
+                    var f = parseFloat(parts[1]);
                     if (!isNaN(p) && !isNaN(f)) { places.push(p); fleets.push(f); }
                   }
                 });
@@ -2727,7 +2887,7 @@ server <- function(input, output, session) {
                   var ap = (places.reduce(function(a,b){return a+b;},0)/places.length).toFixed(1);
                   var af = (fleets.reduce(function(a,b){return a+b;},0)/fleets.length).toFixed(1);
                   var pct = Math.round(ap / af * 100);
-                  $(api.column(col).footer()).html(ap + ' / ' + af + ' / ' + pct + '%');
+                  $(api.column(col).footer()).html(ap + '<br>' + af + '<br>' + pct + '%');
                 } else {
                   $(api.column(col).footer()).html('');
                 }
@@ -2810,7 +2970,7 @@ server <- function(input, output, session) {
       ),
       div(class = "race-narrative-body", HTML(body_html))
     )
-  })
+  }) |> bindCache(input$season_select, input$season_series_select)
 
   # Filter track data to the race selected from the Race Analysis dropdowns
   track <- reactive({
@@ -2954,8 +3114,10 @@ server <- function(input, output, session) {
     
     tw <- tw %>%
       mutate(
-        tws_idx = findInterval(tws_knots, polar_tws_vals, all.inside = TRUE),
-        twa_idx = findInterval(twa_deg,  polar_twa_vals, all.inside = TRUE),
+        # Fold TWA to 0-180 (port/starboard symmetric)
+        twa_folded = ifelse(twa_deg > 180, 360 - twa_deg, twa_deg),
+        tws_idx = snap_nearest_idx(tws_knots, polar_tws_vals),
+        twa_idx = snap_nearest_idx(twa_folded, polar_twa_vals),
         tws_bin = polar_tws_vals[tws_idx],
         twa_bin = polar_twa_vals[twa_idx]
       )

@@ -2,7 +2,7 @@
 <html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
 
 <meta charset="utf-8">
-<meta name="generator" content="quarto-1.9.37">
+<meta name="generator" content="quarto-1.9.38">
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
@@ -34,7 +34,7 @@ ul.task-list li input[type="checkbox"] {
 <script src="wings_analytics_documentation_files/libs/quarto-html/tippy.umd.min.js"></script>
 <script src="wings_analytics_documentation_files/libs/quarto-html/anchor.min.js"></script>
 <link href="wings_analytics_documentation_files/libs/quarto-html/tippy.css" rel="stylesheet">
-<link href="wings_analytics_documentation_files/libs/quarto-html/quarto-syntax-highlighting-7f8f88aac4f3542376d5c11b86a4c14d.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<link href="wings_analytics_documentation_files/libs/quarto-html/quarto-syntax-highlighting-15634bcf2e68342d4ad2dfa704d543f6.css" rel="stylesheet" id="quarto-text-highlighting-styles">
 <script src="wings_analytics_documentation_files/libs/bootstrap/bootstrap.min.js"></script>
 <link href="wings_analytics_documentation_files/libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
 <link href="wings_analytics_documentation_files/libs/bootstrap/bootstrap-efbb37e9afcc02144ebbc7afd12a776f.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
@@ -77,14 +77,17 @@ ul.task-list li input[type="checkbox"] {
   <ul class="collapse">
   <li><a href="#calendar-structure" id="toc-calendar-structure" class="nav-link" data-scroll-target="#calendar-structure">Calendar Structure</a></li>
   <li><a href="#matching-process" id="toc-matching-process" class="nav-link" data-scroll-target="#matching-process">Matching Process</a></li>
+  <li><a href="#future-race-filtering" id="toc-future-race-filtering" class="nav-link" data-scroll-target="#future-race-filtering">Future Race Filtering</a></li>
   </ul></li>
   <li><a href="#app-structure" id="toc-app-structure" class="nav-link" data-scroll-target="#app-structure">App Structure</a>
   <ul class="collapse">
+  <li><a href="#header-and-footer" id="toc-header-and-footer" class="nav-link" data-scroll-target="#header-and-footer">Header and Footer</a></li>
   <li><a href="#race-seasons" id="toc-race-seasons" class="nav-link" data-scroll-target="#race-seasons">Race Seasons</a></li>
-  <li><a href="#race-analysis" id="toc-race-analysis" class="nav-link" data-scroll-target="#race-analysis">Race Analysis</a></li>
+  <li><a href="#race-analytics" id="toc-race-analytics" class="nav-link" data-scroll-target="#race-analytics">Race Analytics</a></li>
   <li><a href="#social" id="toc-social" class="nav-link" data-scroll-target="#social">Social</a></li>
   <li><a href="#about" id="toc-about" class="nav-link" data-scroll-target="#about">About</a></li>
   </ul></li>
+  <li><a href="#ai-generated-narratives" id="toc-ai-generated-narratives" class="nav-link" data-scroll-target="#ai-generated-narratives">AI-Generated Narratives</a></li>
   <li><a href="#deployment" id="toc-deployment" class="nav-link" data-scroll-target="#deployment">Deployment</a></li>
   <li><a href="#the-r-ecosystem" id="toc-the-r-ecosystem" class="nav-link" data-scroll-target="#the-r-ecosystem">The R Ecosystem</a>
   <ul class="collapse">
@@ -122,7 +125,7 @@ ul.task-list li input[type="checkbox"] {
     <div>
     <div class="quarto-title-meta-heading">Published</div>
     <div class="quarto-title-meta-contents">
-      <p class="date">June 27, 2026 11:16 AM EDT</p>
+      <p class="date">July 1, 2026 11:18 PM EDT</p>
     </div>
   </div>
   
@@ -242,7 +245,7 @@ ul.task-list li input[type="checkbox"] {
 <li><code>polar_ref_long</code>: The polar table pivoted to long format (TWS, TWA, reference BSP).</li>
 <li><code>race_calendar</code>: The normalized race calendar from <code>Race Calendar.xlsx</code>.</li>
 </ul>
-<p>This allows the Shiny app to load a pre-computed dataset on startup without re-parsing raw files each session.</p>
+<p>This allows the Shiny app to load a pre-computed dataset on startup without re-parsing raw files each session. Race narratives are cached separately in <code>race_narratives.rds</code> to allow independent rebuilding without reprocessing the full data pipeline.</p>
 </section>
 </section>
 <section id="polar-performance" class="level1">
@@ -267,13 +270,13 @@ ul.task-list li input[type="checkbox"] {
 </section>
 <section id="polar-tables-in-the-app" class="level2">
 <h2 class="anchored" data-anchor-id="polar-tables-in-the-app">Polar Tables in the App</h2>
-<p>The Race Analysis tab presents five polar table views:</p>
+<p>The Race Analytics tab presents five polar table views:</p>
 <ol type="1">
 <li><strong>Observed STW Polars</strong>: Average STW in each TWS/TWA bin for the selected race.</li>
 <li><strong>Observed SOG Polars</strong>: Average SOG in each bin.</li>
 <li><strong>Reference Polars</strong>: The theoretical target speeds from <code>Polars.xlsx</code>.</li>
-<li><strong>STW Polar Performance</strong>: STW minus reference, with row averages and column footer averages.</li>
-<li><strong>SOG Polar Performance</strong>: SOG minus reference, with the same summary statistics.</li>
+<li><strong>STW Polar Performance</strong>: STW minus reference, with a per-row “Ave Perf” column and a column footer showing average performance per TWA bin.</li>
+<li><strong>SOG Polar Performance</strong>: SOG minus reference, with the same per-row and footer summary statistics.</li>
 </ol>
 </section>
 </section>
@@ -283,30 +286,38 @@ ul.task-list li input[type="checkbox"] {
 <section id="calendar-structure" class="level2">
 <h2 class="anchored" data-anchor-id="calendar-structure">Calendar Structure</h2>
 <p>The calendar is organized as a multi-sheet Excel workbook, where each sheet represents a racing season (e.g., “2024-25 Winter”). Within each sheet, rows define individual race events.</p>
-<p>The calendar is expected to have at minimum: <code>race</code>, <code>helm</code>, <code>headsail</code>, <code>start</code>, and <code>end</code>. Optional columns include <code>season</code>, <code>series</code>, <code>place</code>, <code>fleet</code>, and <code>length</code>. Column names are normalized to lowercase with underscores via <code>normalize_excel_names()</code>.</p>
+<p>The calendar is expected to have at minimum: <code>race</code>, <code>start</code>, and <code>end</code>. Additional recognized columns include <code>helm</code>, <code>headsail</code>, <code>mainsail</code>, <code>season</code>, <code>series</code>, <code>place</code>, <code>fleet</code>, and <code>length</code>. Column names are normalized to lowercase with underscores via <code>normalize_excel_names()</code>. Common variations like <code>head_sai</code>, <code>head_sail</code>, and <code>main_sail</code> are automatically renamed to <code>headsail</code> and <code>mainsail</code>.</p>
 </section>
 <section id="matching-process" class="level2">
 <h2 class="anchored" data-anchor-id="matching-process">Matching Process</h2>
 <p>During RDS construction (<code>rebuild_rds_from_raw()</code>), each calendar entry defines a time window. The pipeline iterates through calendar rows and labels all track points whose local datetime falls within the <code>start</code>–<code>end</code> window with the corresponding race name, helm, and headsail. This means a single race name (e.g., “Thursday Night Race”) can appear multiple times in the calendar on different dates, and each occurrence is treated as a distinct race event.</p>
 </section>
+<section id="future-race-filtering" class="level2">
+<h2 class="anchored" data-anchor-id="future-race-filtering">Future Race Filtering</h2>
+<p>At startup, races whose start time is in the future (relative to the current local time) are filtered out of the loaded race calendar, so only past and current races appear in the application.</p>
+</section>
 </section>
 <section id="app-structure" class="level1">
 <h1>App Structure</h1>
-<p>The Shiny application is organized into the following tabs:</p>
+<p>The Shiny application is organized into four tabs, with a branded header and footer framing the content.</p>
+<section id="header-and-footer" class="level2">
+<h2 class="anchored" data-anchor-id="header-and-footer">Header and Footer</h2>
+<p>The header displays the J112e sailboat image, the “Wings Analytics” title with the subtitle “AI-Inspired • Sailing Performance • Racing Intelligence”, and the DIYC (Davis Island Yacht Club) burgee. The footer shows a copyright notice and the AI6 branding image.</p>
+</section>
 <section id="race-seasons" class="level2">
 <h2 class="anchored" data-anchor-id="race-seasons">Race Seasons</h2>
-<p>A season-level summary of all races in the calendar. The user selects a season and optionally a race series from dropdown filters. An AI-generated narrative provides contextual commentary: when “All” is selected, a program-wide performance narrative is displayed; for a specific season, a season-specific narrative is shown.</p>
+<p>A season-level summary of all races in the calendar. The user selects a season and optionally a race series from dropdown filters. Seasons run June through May, as noted in the UI. An AI-generated narrative provides contextual commentary: when “All” is selected, a program-wide performance narrative is displayed (labeled “AI Narrative - Wings Sailing Program”); for a specific season, a season-specific narrative is shown (labeled “AI Race Season Report”).</p>
 <p>Below the narrative, two summary tables aggregate key statistics:</p>
 <ul>
-<li><strong>Season Summary Table</strong>: One row per season showing race count, average place, average fleet size, total distance, sailing hours, average and max STW, max TWS, and total NMEA data points. When a single season is selected, this table contains one row; when “All” is selected, it shows one row per season.</li>
-<li><strong>Series Summary Table</strong>: One row per race series with the same statistics. When a specific series is selected, this table contains one row; when “All” is selected, it shows one row per series.</li>
+<li><strong>Season Summary Table</strong>: One row per season showing race count, days on water, hours sailed, a combined “Place / Fleet / %” column (average place, average fleet, and the percentage), nautical miles, average STW, max STW, max TWS, polar performance (mean STW delta from reference), and NMEA data point count. When a single season is selected, this table contains one row; when “All” is selected, it shows one row per season.</li>
+<li><strong>Series Summary Table</strong>: One row per race series with the same columns. When a specific series is selected, this table contains one row; when “All” is selected, it shows one row per series.</li>
 </ul>
-<p>Both summary tables include a footer row with totals (for additive metrics like distance and hours), averages (for Avg Place, Avg Fleet, Avg STW), and maximums (for Max STW, Max TWS).</p>
-<p>Below the summary tables, a detailed race list displays each race event with its date, series, place, fleet size, distance, sailing hours, average and max STW, max TWS, and NMEA data point count. Races with the same name on different dates are listed as separate rows (grouped by race name and start date).</p>
+<p>Both summary tables include a footer row with totals (for additive metrics like races, days, distance, hours, and NMEA points), averages (for Place / Fleet / %, Avg STW, Polar Perf), and maximums (for Max STW, Max TWS).</p>
+<p>Below the summary tables, a detailed race list displays each race event with: a row number (#), a formatted Race field combining date, series, and race name (e.g., “06/15/2025 • Thursday Night • Race Name”), days on water, hours sailed, Place / Fleet / %, nautical miles, average STW, max STW, max TWS, polar performance, and NMEA data point count. Races with the same name on different dates are listed as separate rows (grouped by race name and start date). The race list footer shows the total number of races and aggregate statistics matching the summary table footer logic.</p>
 </section>
-<section id="race-analysis" class="level2">
-<h2 class="anchored" data-anchor-id="race-analysis">Race Analysis</h2>
-<p>Displays detailed analysis for a single race selected via season, series, and race dropdowns. At the top, a summary table shows key metrics:</p>
+<section id="race-analytics" class="level2">
+<h2 class="anchored" data-anchor-id="race-analytics">Race Analytics</h2>
+<p>Displays detailed analysis for a single race selected via season, series, and race dropdowns. Dropdowns are ordered most recent to oldest, with the most recent race selected by default. When the season changes, the series and race dropdowns update dynamically. At the top, a summary table shows key metrics:</p>
 <table class="caption-top table">
 <colgroup>
 <col style="width: 50%">
@@ -324,7 +335,7 @@ ul.task-list li input[type="checkbox"] {
 <td>Race calendar</td>
 </tr>
 <tr class="even">
-<td>Elapsed time</td>
+<td>Elapsed time (formatted as Xh XXm XXs)</td>
 <td>Track data (max − min local time)</td>
 </tr>
 <tr class="odd">
@@ -343,20 +354,40 @@ ul.task-list li input[type="checkbox"] {
 </table>
 <p>Below the summary:</p>
 <ul>
-<li><strong>AI Race Report</strong>: A deterministically generated narrative analyzing the race’s distance, placement, speed, wind conditions, and polar performance in context of the full racing history.</li>
-<li><strong>Leaflet map</strong>: GPS track rendered as polylines, color-coded by day (local date) to distinguish legs of multiday races.</li>
-<li><strong>Speed plot</strong>: Raw SOG and STW traces overlaid with 1-minute moving averages.</li>
+<li><strong>AI Race Report</strong>: A deterministically generated narrative analyzing the race’s distance, placement, speed, wind conditions, and polar performance in context of the full racing history. The narrative uses a hash-based seed derived from the race name and date to ensure the same race always produces the same narrative. Maritime quotes are woven throughout for character. The narrative also distinguishes between early seasons (where instrument calibration may have been imprecise) and recent seasons (2025+) when interpreting polar performance numbers.</li>
+<li><strong>Leaflet map</strong>: GPS track rendered as polylines, color-coded by day (local date) to distinguish legs of multiday races. Includes a day legend.</li>
+<li><strong>Speed plot</strong>: Raw SOG and STW traces overlaid with 1-minute moving averages, built with ggplot2.</li>
 <li><strong>Polar tables</strong>: Five sub-tabs as described in the Polar Performance section above.</li>
 </ul>
 </section>
 <section id="social" class="level2">
 <h2 class="anchored" data-anchor-id="social">Social</h2>
-<p>Links to external content including Spotify tracks by Wings J112, YouTube videos, and the Wings merchandise shop.</p>
+<p>Links to external content organized in styled card sections:</p>
+<ul>
+<li><strong>Music on Spotify</strong>: A link to the Wings J112 Spotify artist page, followed by a grid of individual track links.</li>
+<li><strong>Videos on YouTube</strong>: Links to Wings sailing videos.</li>
+<li><strong>Swag Shop</strong>: A link to the Wings merchandise shop on DistroKid.</li>
+</ul>
 </section>
 <section id="about" class="level2">
 <h2 class="anchored" data-anchor-id="about">About</h2>
-<p>Links to this documentation, the project’s GitHub repository, and data file management controls (password-protected, local-only) for rebuilding or deleting the RDS data files.</p>
+<p>Links and controls organized in card sections:</p>
+<ul>
+<li><strong>Documentation</strong>: A link to this documentation (rendered HTML served from the <code>www/</code> directory).</li>
+<li><strong>Project Source</strong>: A link to the Wings Analytics GitHub repository.</li>
+<li><strong>Data File Management</strong>: Password-protected controls (password: “wings”) for managing data files locally. Operations include rebuilding race narratives, deleting the narratives file, and deleting the track data RDS. These controls are only functional when running locally; they are hidden or disabled on deployed instances.</li>
+</ul>
 </section>
+</section>
+<section id="ai-generated-narratives" class="level1">
+<h1>AI-Generated Narratives</h1>
+<p>The application includes three narrative generators that produce deterministic, data-driven commentary:</p>
+<ul>
+<li><strong><code>generate_race_narrative()</code></strong>: Produces a per-race analysis covering distance, placement, speed performance, SOG-STW differential (indicating current effects), polar performance, wind conditions, headsail selection, and helm. The narrative adapts its language based on how the race’s metrics compare to the full racing history (e.g., percentile-based descriptions for speed and wind).</li>
+<li><strong><code>generate_season_narrative()</code></strong>: Produces a season-level summary covering race count, date range, series breakdown, total distance, placement statistics (wins, top-half percentage), speed and wind averages, and polar performance trends. Distinguishes between earlier seasons with uncalibrated instruments and recent seasons with reliable data.</li>
+<li><strong><code>generate_performance_narrative()</code></strong>: Produces a program-wide narrative spanning all seasons, covering the overall trajectory of placement, speed, and polar performance evolution. Identifies trends across seasons and contextualizes early-season calibration artifacts.</li>
+</ul>
+<p>All narratives use a deterministic quote selection mechanism: a hash computed from the race name and date seeds a picker function, ensuring the same race always produces the same narrative without randomness. Maritime quotes from a curated pool are woven throughout for personality. Narratives are cached in <code>race_narratives.rds</code> and can be rebuilt independently from the About tab.</p>
 </section>
 <section id="deployment" class="level1">
 <h1>Deployment</h1>
@@ -365,7 +396,7 @@ ul.task-list li input[type="checkbox"] {
 <li><strong>Local development</strong>: If <code>track_data.rds</code> is missing, the app rebuilds it from raw <code>.txt</code> files, <code>Race Calendar.xlsx</code>, and <code>Polars.xlsx</code> in the configured data directory. This ensures the latest data is always incorporated.</li>
 <li><strong>Deployed (shinyapps.io / Posit Connect)</strong>: Rebuilding is disabled. The <code>track_data.rds</code> file must be included in the deployment bundle alongside <code>app.R</code>. This avoids dependency on external file paths and ensures fast, reliable startup.</li>
 </ul>
-<p>Environment detection checks for standard deployment environment variables (<code>SHINY_PORT</code>, <code>RSCONNECT_SERVER</code>, etc.). The <code>IS_DEPLOYED</code> flag controls whether <code>rebuild_rds_from_raw()</code> is permitted to run.</p>
+<p>Environment detection checks for standard deployment environment variables (<code>SHINY_PORT</code>, <code>RSCONNECT_SERVER</code>, <code>RSCONNECT_URL</code>, <code>RSCONNECT_ACCOUNT</code>, <code>RS_CONNECT_SERVER</code>, <code>SHINY_SERVER_VERSION</code>). The <code>IS_DEPLOYED</code> flag controls whether <code>rebuild_rds_from_raw()</code> is permitted to run.</p>
 </section>
 <section id="the-r-ecosystem" class="level1">
 <h1>The R Ecosystem</h1>
@@ -387,7 +418,7 @@ ul.task-list li input[type="checkbox"] {
 <section id="shiny" class="level2">
 <h2 class="anchored" data-anchor-id="shiny">Shiny</h2>
 <p>Shiny is an R package that turns R scripts into interactive web applications without requiring any knowledge of HTML, CSS, or JavaScript. Created by Joe Cheng at RStudio (now Posit) and first released in 2012, Shiny lets R users build reactive dashboards and data tools that run in a web browser. The developer defines a user interface (UI) and a server function containing R logic; Shiny handles the communication between the browser and the R process, automatically re-executing code when inputs change.</p>
-<p>Wings Analytics is a Shiny application. The entire platform — interactive maps, filterable tables, polar performance grids, season summaries, and AI-generated race narratives — is built in a single <code>app.R</code> file using standard Shiny patterns. The UI uses the <code>bslib</code> package for modern Bootstrap 5 theming with a custom dark glass-morphism aesthetic.</p>
+<p>Wings Analytics is a Shiny application. The entire platform — interactive maps, filterable tables, polar performance grids, season summaries, and AI-generated race narratives — is built in a single <code>app.R</code> file using standard Shiny patterns. The UI uses Shiny’s <code>fluidPage()</code> layout with extensive custom CSS implementing a dark glass-morphism aesthetic with semi-transparent panels, subtle borders, and responsive styling.</p>
 </section>
 <section id="github" class="level2">
 <h2 class="anchored" data-anchor-id="github">GitHub</h2>
@@ -412,11 +443,13 @@ ul.task-list li input[type="checkbox"] {
 <h1>Technical Notes</h1>
 <ul>
 <li><strong>Timezone handling</strong>: All times are stored internally as UTC (<code>POSIXct</code>) and converted to Eastern time (<code>America/New_York</code>) for display and calendar matching via <code>lubridate::with_tz()</code>.</li>
+<li><strong>Excel datetime conversion</strong>: The <code>excel_to_posix_local()</code> helper handles multiple input types — <code>POSIXct</code>, <code>Date</code>, numeric Excel serial dates, and character strings — normalizing them all to local-timezone <code>POSIXct</code> values.</li>
 <li><strong>Geospatial calculations</strong>: The <code>geosphere</code> package provides Haversine distance calculations for exclusion zone filtering and teleport detection.</li>
-<li><strong>Interactive tables</strong>: DT (DataTables) powers all interactive tables, with custom JavaScript footer callbacks for computing column sums, averages, and maximums.</li>
-<li><strong>Mapping</strong>: The <code>leaflet</code> package renders GPS tracks as interactive polylines on OpenStreetMap tiles.</li>
-<li><strong>Visual design</strong>: The app uses a dark theme implemented via inline CSS, with a glass-morphism card aesthetic and responsive layout.</li>
-<li><strong>AI narratives</strong>: Race and season narratives are deterministically generated from performance data and cached in <code>race_narratives.rds</code>. They use a hash-based quote selection mechanism to ensure the same race always produces the same narrative without randomness.</li>
+<li><strong>Interactive tables</strong>: DT (DataTables) powers all interactive tables, with custom JavaScript footer callbacks for computing column sums, averages, and maximums. Footer logic adapts per column type (e.g., averages for STW and Polar Perf, maximums for Max STW and Max TWS, sums for distance and hours, and a custom parser for the combined “Place / Fleet / %” column).</li>
+<li><strong>Mapping</strong>: The <code>leaflet</code> package renders GPS tracks as interactive polylines on OpenStreetMap tiles, color-coded by local date using <code>RColorBrewer</code> palettes.</li>
+<li><strong>Visual design</strong>: The app uses a dark theme implemented via inline CSS within <code>tags$style()</code>, with a glass-morphism card aesthetic featuring semi-transparent backgrounds, subtle borders, and box shadows. The layout uses Shiny’s standard <code>fluidPage()</code> with <code>fluidRow()</code>/<code>column()</code> grids.</li>
+<li><strong>AI narratives</strong>: Race and season narratives are deterministically generated from performance data and cached in <code>race_narratives.rds</code>. They use a hash-based quote selection mechanism to ensure the same race always produces the same narrative without randomness. The narrative generators distinguish between pre-2025 seasons (where speed sensor calibration was still being refined) and 2025+ seasons (where instruments are properly calibrated) when interpreting polar performance data.</li>
+<li><strong>Reactive caching</strong>: The season narrative card uses <code>bindCache()</code> keyed on season and series selections to avoid redundant re-computation.</li>
 </ul>
 </section>
 

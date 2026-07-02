@@ -1,7 +1,7 @@
 ---
 title: "Wings Analytics Documentation"
 author: "Mike Danielson"
-date: "June 27, 2026 11:16 AM EDT"
+date: "July 1, 2026 11:18 PM EDT"
 date-format: "MMMM D, YYYY h:mm A z"
 format:
   html:
@@ -103,7 +103,7 @@ The processed dataset is serialized into `track_data.rds` as a named list contai
 - `polar_ref_long`: The polar table pivoted to long format (TWS, TWA, reference BSP).
 - `race_calendar`: The normalized race calendar from `Race Calendar.xlsx`.
 
-This allows the Shiny app to load a pre-computed dataset on startup without re-parsing raw files each session.
+This allows the Shiny app to load a pre-computed dataset on startup without re-parsing raw files each session. Race narratives are cached separately in `race_narratives.rds` to allow independent rebuilding without reprocessing the full data pipeline.
 
 # Polar Performance
 
@@ -128,13 +128,13 @@ Positive values indicate the boat exceeded the reference polar; negative values 
 
 ## Polar Tables in the App
 
-The Race Analysis tab presents five polar table views:
+The Race Analytics tab presents five polar table views:
 
 1. **Observed STW Polars**: Average STW in each TWS/TWA bin for the selected race.
 2. **Observed SOG Polars**: Average SOG in each bin.
 3. **Reference Polars**: The theoretical target speeds from `Polars.xlsx`.
-4. **STW Polar Performance**: STW minus reference, with row averages and column footer averages.
-5. **SOG Polar Performance**: SOG minus reference, with the same summary statistics.
+4. **STW Polar Performance**: STW minus reference, with a per-row "Ave Perf" column and a column footer showing average performance per TWA bin.
+5. **SOG Polar Performance**: SOG minus reference, with the same per-row and footer summary statistics.
 
 # Race Calendar Integration
 
@@ -144,55 +144,81 @@ The system integrates an external Excel calendar (`Race Calendar.xlsx`) to label
 
 The calendar is organized as a multi-sheet Excel workbook, where each sheet represents a racing season (e.g., "2024-25 Winter"). Within each sheet, rows define individual race events.
 
-The calendar is expected to have at minimum: `race`, `helm`, `headsail`, `start`, and `end`. Optional columns include `season`, `series`, `place`, `fleet`, and `length`. Column names are normalized to lowercase with underscores via `normalize_excel_names()`.
+The calendar is expected to have at minimum: `race`, `start`, and `end`. Additional recognized columns include `helm`, `headsail`, `mainsail`, `season`, `series`, `place`, `fleet`, and `length`. Column names are normalized to lowercase with underscores via `normalize_excel_names()`. Common variations like `head_sai`, `head_sail`, and `main_sail` are automatically renamed to `headsail` and `mainsail`.
 
 ## Matching Process
 
 During RDS construction (`rebuild_rds_from_raw()`), each calendar entry defines a time window. The pipeline iterates through calendar rows and labels all track points whose local datetime falls within the `start`–`end` window with the corresponding race name, helm, and headsail. This means a single race name (e.g., "Thursday Night Race") can appear multiple times in the calendar on different dates, and each occurrence is treated as a distinct race event.
 
+## Future Race Filtering
+
+At startup, races whose start time is in the future (relative to the current local time) are filtered out of the loaded race calendar, so only past and current races appear in the application.
+
 # App Structure
 
-The Shiny application is organized into the following tabs:
+The Shiny application is organized into four tabs, with a branded header and footer framing the content.
+
+## Header and Footer
+
+The header displays the J112e sailboat image, the "Wings Analytics" title with the subtitle "AI-Inspired • Sailing Performance • Racing Intelligence", and the DIYC (Davis Island Yacht Club) burgee. The footer shows a copyright notice and the AI6 branding image.
 
 ## Race Seasons
 
-A season-level summary of all races in the calendar. The user selects a season and optionally a race series from dropdown filters. An AI-generated narrative provides contextual commentary: when "All" is selected, a program-wide performance narrative is displayed; for a specific season, a season-specific narrative is shown.
+A season-level summary of all races in the calendar. The user selects a season and optionally a race series from dropdown filters. Seasons run June through May, as noted in the UI. An AI-generated narrative provides contextual commentary: when "All" is selected, a program-wide performance narrative is displayed (labeled "AI Narrative - Wings Sailing Program"); for a specific season, a season-specific narrative is shown (labeled "AI Race Season Report").
 
 Below the narrative, two summary tables aggregate key statistics:
 
-- **Season Summary Table**: One row per season showing race count, average place, average fleet size, total distance, sailing hours, average and max STW, max TWS, and total NMEA data points. When a single season is selected, this table contains one row; when "All" is selected, it shows one row per season.
-- **Series Summary Table**: One row per race series with the same statistics. When a specific series is selected, this table contains one row; when "All" is selected, it shows one row per series.
+- **Season Summary Table**: One row per season showing race count, days on water, hours sailed, a combined "Place / Fleet / %" column (average place, average fleet, and the percentage), nautical miles, average STW, max STW, max TWS, polar performance (mean STW delta from reference), and NMEA data point count. When a single season is selected, this table contains one row; when "All" is selected, it shows one row per season.
+- **Series Summary Table**: One row per race series with the same columns. When a specific series is selected, this table contains one row; when "All" is selected, it shows one row per series.
 
-Both summary tables include a footer row with totals (for additive metrics like distance and hours), averages (for Avg Place, Avg Fleet, Avg STW), and maximums (for Max STW, Max TWS).
+Both summary tables include a footer row with totals (for additive metrics like races, days, distance, hours, and NMEA points), averages (for Place / Fleet / %, Avg STW, Polar Perf), and maximums (for Max STW, Max TWS).
 
-Below the summary tables, a detailed race list displays each race event with its date, series, place, fleet size, distance, sailing hours, average and max STW, max TWS, and NMEA data point count. Races with the same name on different dates are listed as separate rows (grouped by race name and start date).
+Below the summary tables, a detailed race list displays each race event with: a row number (#), a formatted Race field combining date, series, and race name (e.g., "06/15/2025 • Thursday Night • Race Name"), days on water, hours sailed, Place / Fleet / %, nautical miles, average STW, max STW, max TWS, polar performance, and NMEA data point count. Races with the same name on different dates are listed as separate rows (grouped by race name and start date). The race list footer shows the total number of races and aggregate statistics matching the summary table footer logic.
 
-## Race Analysis
+## Race Analytics
 
-Displays detailed analysis for a single race selected via season, series, and race dropdowns. At the top, a summary table shows key metrics:
+Displays detailed analysis for a single race selected via season, series, and race dropdowns. Dropdowns are ordered most recent to oldest, with the most recent race selected by default. When the season changes, the series and race dropdowns update dynamically. At the top, a summary table shows key metrics:
 
 | Metric | Source |
 |--------|--------|
 | Race name, date, distance, place/fleet | Race calendar |
-| Elapsed time | Track data (max − min local time) |
+| Elapsed time (formatted as Xh XXm XXs) | Track data (max − min local time) |
 | Avg/Max STW and SOG | Track data |
 | Avg/Max TWS | Track data |
 | STW and SOG Polar Performance | Track data (mean of per-observation deltas) |
 
 Below the summary:
 
-- **AI Race Report**: A deterministically generated narrative analyzing the race's distance, placement, speed, wind conditions, and polar performance in context of the full racing history.
-- **Leaflet map**: GPS track rendered as polylines, color-coded by day (local date) to distinguish legs of multiday races.
-- **Speed plot**: Raw SOG and STW traces overlaid with 1-minute moving averages.
+- **AI Race Report**: A deterministically generated narrative analyzing the race's distance, placement, speed, wind conditions, and polar performance in context of the full racing history. The narrative uses a hash-based seed derived from the race name and date to ensure the same race always produces the same narrative. Maritime quotes are woven throughout for character. The narrative also distinguishes between early seasons (where instrument calibration may have been imprecise) and recent seasons (2025+) when interpreting polar performance numbers.
+- **Leaflet map**: GPS track rendered as polylines, color-coded by day (local date) to distinguish legs of multiday races. Includes a day legend.
+- **Speed plot**: Raw SOG and STW traces overlaid with 1-minute moving averages, built with ggplot2.
 - **Polar tables**: Five sub-tabs as described in the Polar Performance section above.
 
 ## Social
 
-Links to external content including Spotify tracks by Wings J112, YouTube videos, and the Wings merchandise shop.
+Links to external content organized in styled card sections:
+
+- **Music on Spotify**: A link to the Wings J112 Spotify artist page, followed by a grid of individual track links.
+- **Videos on YouTube**: Links to Wings sailing videos.
+- **Swag Shop**: A link to the Wings merchandise shop on DistroKid.
 
 ## About
 
-Links to this documentation, the project's GitHub repository, and data file management controls (password-protected, local-only) for rebuilding or deleting the RDS data files.
+Links and controls organized in card sections:
+
+- **Documentation**: A link to this documentation (rendered HTML served from the `www/` directory).
+- **Project Source**: A link to the Wings Analytics GitHub repository.
+- **Data File Management**: Password-protected controls (password: "wings") for managing data files locally. Operations include rebuilding race narratives, deleting the narratives file, and deleting the track data RDS. These controls are only functional when running locally; they are hidden or disabled on deployed instances.
+
+# AI-Generated Narratives
+
+The application includes three narrative generators that produce deterministic, data-driven commentary:
+
+- **`generate_race_narrative()`**: Produces a per-race analysis covering distance, placement, speed performance, SOG-STW differential (indicating current effects), polar performance, wind conditions, headsail selection, and helm. The narrative adapts its language based on how the race's metrics compare to the full racing history (e.g., percentile-based descriptions for speed and wind).
+- **`generate_season_narrative()`**: Produces a season-level summary covering race count, date range, series breakdown, total distance, placement statistics (wins, top-half percentage), speed and wind averages, and polar performance trends. Distinguishes between earlier seasons with uncalibrated instruments and recent seasons with reliable data.
+- **`generate_performance_narrative()`**: Produces a program-wide narrative spanning all seasons, covering the overall trajectory of placement, speed, and polar performance evolution. Identifies trends across seasons and contextualizes early-season calibration artifacts.
+
+All narratives use a deterministic quote selection mechanism: a hash computed from the race name and date seeds a picker function, ensuring the same race always produces the same narrative without randomness. Maritime quotes from a curated pool are woven throughout for personality. Narratives are cached in `race_narratives.rds` and can be rebuilt independently from the About tab.
 
 # Deployment
 
@@ -201,7 +227,7 @@ The application supports two modes of operation controlled by environment detect
 - **Local development**: If `track_data.rds` is missing, the app rebuilds it from raw `.txt` files, `Race Calendar.xlsx`, and `Polars.xlsx` in the configured data directory. This ensures the latest data is always incorporated.
 - **Deployed (shinyapps.io / Posit Connect)**: Rebuilding is disabled. The `track_data.rds` file must be included in the deployment bundle alongside `app.R`. This avoids dependency on external file paths and ensures fast, reliable startup.
 
-Environment detection checks for standard deployment environment variables (`SHINY_PORT`, `RSCONNECT_SERVER`, etc.). The `IS_DEPLOYED` flag controls whether `rebuild_rds_from_raw()` is permitted to run.
+Environment detection checks for standard deployment environment variables (`SHINY_PORT`, `RSCONNECT_SERVER`, `RSCONNECT_URL`, `RSCONNECT_ACCOUNT`, `RS_CONNECT_SERVER`, `SHINY_SERVER_VERSION`). The `IS_DEPLOYED` flag controls whether `rebuild_rds_from_raw()` is permitted to run.
 
 # The R Ecosystem
 
@@ -227,7 +253,7 @@ Wings Analytics was developed collaboratively with Posit Assistant. The AI assis
 
 Shiny is an R package that turns R scripts into interactive web applications without requiring any knowledge of HTML, CSS, or JavaScript. Created by Joe Cheng at RStudio (now Posit) and first released in 2012, Shiny lets R users build reactive dashboards and data tools that run in a web browser. The developer defines a user interface (UI) and a server function containing R logic; Shiny handles the communication between the browser and the R process, automatically re-executing code when inputs change.
 
-Wings Analytics is a Shiny application. The entire platform — interactive maps, filterable tables, polar performance grids, season summaries, and AI-generated race narratives — is built in a single `app.R` file using standard Shiny patterns. The UI uses the `bslib` package for modern Bootstrap 5 theming with a custom dark glass-morphism aesthetic.
+Wings Analytics is a Shiny application. The entire platform — interactive maps, filterable tables, polar performance grids, season summaries, and AI-generated race narratives — is built in a single `app.R` file using standard Shiny patterns. The UI uses Shiny's `fluidPage()` layout with extensive custom CSS implementing a dark glass-morphism aesthetic with semi-transparent panels, subtle borders, and responsive styling.
 
 ## GitHub
 
@@ -252,8 +278,10 @@ The only costs in the pipeline are hardware (the onboard laptop and Yacht Device
 # Technical Notes
 
 - **Timezone handling**: All times are stored internally as UTC (`POSIXct`) and converted to Eastern time (`America/New_York`) for display and calendar matching via `lubridate::with_tz()`.
+- **Excel datetime conversion**: The `excel_to_posix_local()` helper handles multiple input types — `POSIXct`, `Date`, numeric Excel serial dates, and character strings — normalizing them all to local-timezone `POSIXct` values.
 - **Geospatial calculations**: The `geosphere` package provides Haversine distance calculations for exclusion zone filtering and teleport detection.
-- **Interactive tables**: DT (DataTables) powers all interactive tables, with custom JavaScript footer callbacks for computing column sums, averages, and maximums.
-- **Mapping**: The `leaflet` package renders GPS tracks as interactive polylines on OpenStreetMap tiles.
-- **Visual design**: The app uses a dark theme implemented via inline CSS, with a glass-morphism card aesthetic and responsive layout.
-- **AI narratives**: Race and season narratives are deterministically generated from performance data and cached in `race_narratives.rds`. They use a hash-based quote selection mechanism to ensure the same race always produces the same narrative without randomness.
+- **Interactive tables**: DT (DataTables) powers all interactive tables, with custom JavaScript footer callbacks for computing column sums, averages, and maximums. Footer logic adapts per column type (e.g., averages for STW and Polar Perf, maximums for Max STW and Max TWS, sums for distance and hours, and a custom parser for the combined "Place / Fleet / %" column).
+- **Mapping**: The `leaflet` package renders GPS tracks as interactive polylines on OpenStreetMap tiles, color-coded by local date using `RColorBrewer` palettes.
+- **Visual design**: The app uses a dark theme implemented via inline CSS within `tags$style()`, with a glass-morphism card aesthetic featuring semi-transparent backgrounds, subtle borders, and box shadows. The layout uses Shiny's standard `fluidPage()` with `fluidRow()`/`column()` grids.
+- **AI narratives**: Race and season narratives are deterministically generated from performance data and cached in `race_narratives.rds`. They use a hash-based quote selection mechanism to ensure the same race always produces the same narrative without randomness. The narrative generators distinguish between pre-2025 seasons (where speed sensor calibration was still being refined) and 2025+ seasons (where instruments are properly calibrated) when interpreting polar performance data.
+- **Reactive caching**: The season narrative card uses `bindCache()` keyed on season and series selections to avoid redundant re-computation.
