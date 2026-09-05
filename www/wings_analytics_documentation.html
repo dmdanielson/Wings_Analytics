@@ -1,0 +1,963 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.9.38">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+<meta name="author" content="Mike Danielson">
+
+<title>Wings Analytics Documentation</title>
+<style>
+/* Default styles provided by pandoc.
+** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+*/
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: min(4vw, 1.5em);}
+div.column{flex: auto; overflow-x: auto;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+</style>
+
+
+<script src="wings_analytics_documentation_files/libs/clipboard/clipboard.min.js"></script>
+<script src="wings_analytics_documentation_files/libs/quarto-html/quarto.js" type="module"></script>
+<script src="wings_analytics_documentation_files/libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="wings_analytics_documentation_files/libs/quarto-html/popper.min.js"></script>
+<script src="wings_analytics_documentation_files/libs/quarto-html/tippy.umd.min.js"></script>
+<script src="wings_analytics_documentation_files/libs/quarto-html/anchor.min.js"></script>
+<link href="wings_analytics_documentation_files/libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="wings_analytics_documentation_files/libs/quarto-html/quarto-syntax-highlighting-15634bcf2e68342d4ad2dfa704d543f6.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="wings_analytics_documentation_files/libs/bootstrap/bootstrap.min.js"></script>
+<link href="wings_analytics_documentation_files/libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="wings_analytics_documentation_files/libs/bootstrap/bootstrap-efbb37e9afcc02144ebbc7afd12a776f.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+
+
+</head>
+
+<body class="quarto-light">
+
+<div id="quarto-content" class="page-columns page-rows-contents page-layout-article">
+<div id="quarto-margin-sidebar" class="sidebar margin-sidebar">
+  <nav id="TOC" role="doc-toc" class="toc-active">
+    <h2 id="toc-title">Table of contents</h2>
+   
+  <ul>
+  <li><a href="#overview" id="toc-overview" class="nav-link active" data-scroll-target="#overview">Overview</a></li>
+  <li><a href="#nmea-2000-0183-background" id="toc-nmea-2000-0183-background" class="nav-link" data-scroll-target="#nmea-2000-0183-background">NMEA 2000 &amp; 0183: Background</a>
+  <ul class="collapse">
+  <li><a href="#what-is-nmea-0183" id="toc-what-is-nmea-0183" class="nav-link" data-scroll-target="#what-is-nmea-0183">What Is NMEA 0183?</a></li>
+  <li><a href="#how-it-works" id="toc-how-it-works" class="nav-link" data-scroll-target="#how-it-works">How It Works</a></li>
+  <li><a href="#nmea-2000-vs.-nmea-0183" id="toc-nmea-2000-vs.-nmea-0183" class="nav-link" data-scroll-target="#nmea-2000-vs.-nmea-0183">NMEA 2000 vs.&nbsp;NMEA 0183</a></li>
+  <li><a href="#data-recording-and-upload" id="toc-data-recording-and-upload" class="nav-link" data-scroll-target="#data-recording-and-upload">Data Recording and Upload</a></li>
+  <li><a href="#common-uses-in-sailing" id="toc-common-uses-in-sailing" class="nav-link" data-scroll-target="#common-uses-in-sailing">Common Uses in Sailing</a></li>
+  </ul></li>
+  <li><a href="#data-pipeline" id="toc-data-pipeline" class="nav-link" data-scroll-target="#data-pipeline">Data Pipeline</a>
+  <ul class="collapse">
+  <li><a href="#raw-data-ingestion" id="toc-raw-data-ingestion" class="nav-link" data-scroll-target="#raw-data-ingestion">Raw Data Ingestion</a></li>
+  <li><a href="#processing-and-synchronization" id="toc-processing-and-synchronization" class="nav-link" data-scroll-target="#processing-and-synchronization">Processing and Synchronization</a></li>
+  <li><a href="#data-cleaning" id="toc-data-cleaning" class="nav-link" data-scroll-target="#data-cleaning">Data Cleaning</a></li>
+  <li><a href="#storage" id="toc-storage" class="nav-link" data-scroll-target="#storage">Storage</a></li>
+  <li><a href="#pre-computed-race-statistics" id="toc-pre-computed-race-statistics" class="nav-link" data-scroll-target="#pre-computed-race-statistics">Pre-computed Race Statistics</a></li>
+  </ul></li>
+  <li><a href="#polar-performance" id="toc-polar-performance" class="nav-link" data-scroll-target="#polar-performance">Polar Performance</a>
+  <ul class="collapse">
+  <li><a href="#what-are-polars" id="toc-what-are-polars" class="nav-link" data-scroll-target="#what-are-polars">What Are Polars?</a></li>
+  <li><a href="#how-polar-binning-works" id="toc-how-polar-binning-works" class="nav-link" data-scroll-target="#how-polar-binning-works">How Polar Binning Works</a></li>
+  <li><a href="#performance-metrics" id="toc-performance-metrics" class="nav-link" data-scroll-target="#performance-metrics">Performance Metrics</a></li>
+  <li><a href="#polar-tables-in-the-app" id="toc-polar-tables-in-the-app" class="nav-link" data-scroll-target="#polar-tables-in-the-app">Polar Tables in the App</a></li>
+  </ul></li>
+  <li><a href="#race-calendar-integration" id="toc-race-calendar-integration" class="nav-link" data-scroll-target="#race-calendar-integration">Race Calendar Integration</a>
+  <ul class="collapse">
+  <li><a href="#calendar-structure" id="toc-calendar-structure" class="nav-link" data-scroll-target="#calendar-structure">Calendar Structure</a></li>
+  <li><a href="#matching-process" id="toc-matching-process" class="nav-link" data-scroll-target="#matching-process">Matching Process</a></li>
+  <li><a href="#future-race-filtering" id="toc-future-race-filtering" class="nav-link" data-scroll-target="#future-race-filtering">Future Race Filtering</a></li>
+  </ul></li>
+  <li><a href="#app-structure" id="toc-app-structure" class="nav-link" data-scroll-target="#app-structure">App Structure</a>
+  <ul class="collapse">
+  <li><a href="#header-and-footer" id="toc-header-and-footer" class="nav-link" data-scroll-target="#header-and-footer">Header and Footer</a></li>
+  <li><a href="#race-seasons" id="toc-race-seasons" class="nav-link" data-scroll-target="#race-seasons">Race Seasons</a></li>
+  <li><a href="#race-analytics" id="toc-race-analytics" class="nav-link" data-scroll-target="#race-analytics">Race Analytics</a></li>
+  <li><a href="#social" id="toc-social" class="nav-link" data-scroll-target="#social">Social</a></li>
+  <li><a href="#about" id="toc-about" class="nav-link" data-scroll-target="#about">About</a></li>
+  </ul></li>
+  <li><a href="#ai-generated-narratives" id="toc-ai-generated-narratives" class="nav-link" data-scroll-target="#ai-generated-narratives">AI-Generated Narratives</a></li>
+  <li><a href="#deployment" id="toc-deployment" class="nav-link" data-scroll-target="#deployment">Deployment</a></li>
+  <li><a href="#the-r-ecosystem" id="toc-the-r-ecosystem" class="nav-link" data-scroll-target="#the-r-ecosystem">The R Ecosystem</a>
+  <ul class="collapse">
+  <li><a href="#r" id="toc-r" class="nav-link" data-scroll-target="#r">R</a></li>
+  <li><a href="#rstudio" id="toc-rstudio" class="nav-link" data-scroll-target="#rstudio">RStudio</a></li>
+  <li><a href="#posit-assistant" id="toc-posit-assistant" class="nav-link" data-scroll-target="#posit-assistant">Posit Assistant</a></li>
+  <li><a href="#shiny" id="toc-shiny" class="nav-link" data-scroll-target="#shiny">Shiny</a></li>
+  <li><a href="#github" id="toc-github" class="nav-link" data-scroll-target="#github">GitHub</a>
+  <ul class="collapse">
+  <li><a href="#deployment-at-near-zero-cost" id="toc-deployment-at-near-zero-cost" class="nav-link" data-scroll-target="#deployment-at-near-zero-cost">Deployment at Near-Zero Cost</a></li>
+  </ul></li>
+  </ul></li>
+  <li><a href="#performance-optimization" id="toc-performance-optimization" class="nav-link" data-scroll-target="#performance-optimization">Performance Optimization</a>
+  <ul class="collapse">
+  <li><a href="#two-phase-pipeline-architecture" id="toc-two-phase-pipeline-architecture" class="nav-link" data-scroll-target="#two-phase-pipeline-architecture">Two-Phase Pipeline Architecture</a></li>
+  <li><a href="#pre-computed-race-statistics-1" id="toc-pre-computed-race-statistics-1" class="nav-link" data-scroll-target="#pre-computed-race-statistics-1">Pre-computed Race Statistics</a></li>
+  <li><a href="#reactive-caching-with-bindcache" id="toc-reactive-caching-with-bindcache" class="nav-link" data-scroll-target="#reactive-caching-with-bindcache">Reactive Caching with <code>bindCache()</code></a></li>
+  <li><a href="#startup-processing" id="toc-startup-processing" class="nav-link" data-scroll-target="#startup-processing">Startup Processing</a></li>
+  </ul></li>
+  <li><a href="#technical-notes" id="toc-technical-notes" class="nav-link" data-scroll-target="#technical-notes">Technical Notes</a></li>
+  </ul>
+</nav>
+</div>
+<main class="content" id="quarto-document-content">
+
+<header id="title-block-header" class="quarto-title-block default">
+<div class="quarto-title">
+<h1 class="title">Wings Analytics Documentation</h1>
+</div>
+
+
+
+<div class="quarto-title-meta">
+
+    <div>
+    <div class="quarto-title-meta-heading">Author</div>
+    <div class="quarto-title-meta-contents">
+             <p>Mike Danielson </p>
+          </div>
+  </div>
+    
+    <div>
+    <div class="quarto-title-meta-heading">Published</div>
+    <div class="quarto-title-meta-contents">
+      <p class="date">July 9, 2026 7:36 PM EDT</p>
+    </div>
+  </div>
+  
+    
+  </div>
+  
+
+
+</header>
+
+
+<section id="overview" class="level1">
+<h1>Overview</h1>
+<p>Wings Analytics is a sailing performance analytics platform built on R and Shiny. It transforms raw NMEA GPS and instrument data logged from onboard electronics into interactive race analysis, including spatial track visualization, speed diagnostics, and polar performance benchmarking. The application integrates an external race calendar to label track data with race metadata and provides season-level and series-level views of racing activity.</p>
+</section>
+<section id="nmea-2000-0183-background" class="level1">
+<h1>NMEA 2000 &amp; 0183: Background</h1>
+<section id="what-is-nmea-0183" class="level2">
+<h2 class="anchored" data-anchor-id="what-is-nmea-0183">What Is NMEA 0183?</h2>
+<p>NMEA 0183 is a serial communication standard published by the National Marine Electronics Association (NMEA). Originally introduced in 1983, it defines the electrical interface and data protocol used by marine electronic instruments — GPS receivers, chart plotters, wind sensors, speed logs, and autopilots — to exchange navigation data. Despite its age, NMEA 0183 remains the most widely supported protocol in recreational and racing sailboats, and is still used alongside its newer successor, NMEA 2000.</p>
+</section>
+<section id="how-it-works" class="level2">
+<h2 class="anchored" data-anchor-id="how-it-works">How It Works</h2>
+<p>NMEA 0183 transmits data as plain-text ASCII sentences over an RS-422 serial connection at 4,800 baud (though higher rates are common on modern devices). Each sentence begins with a <code>$</code> character followed by a two-character talker ID (identifying the source device) and a three-character sentence type. Fields are comma-delimited and the sentence ends with an optional checksum after a <code>*</code> character.</p>
+<p>For example, a typical RMC (Recommended Minimum Navigation) sentence looks like:</p>
+<pre><code>$GPRMC,123519,A,4807.038,N,01131.000,E,022.4,084.4,230394,003.1,W*6A</code></pre>
+<p>This single line encodes UTC time, position in degrees and minutes, speed over ground, course over ground, and the date — everything needed to plot a track point on a chart.</p>
+</section>
+<section id="nmea-2000-vs.-nmea-0183" class="level2">
+<h2 class="anchored" data-anchor-id="nmea-2000-vs.-nmea-0183">NMEA 2000 vs.&nbsp;NMEA 0183</h2>
+<p>Wings is equipped with a B&amp;G instrument network that communicates internally over NMEA 2000 (also called N2K or SignalK in some open-source contexts). NMEA 2000 is the modern successor to NMEA 0183 — it uses a Controller Area Network (CAN bus) backbone, transmits binary data at 250 kbps (roughly 50× faster than NMEA 0183’s 4,800 baud), and supports multi-device arbitration so that dozens of instruments can share a single backbone cable without signal collisions. Where NMEA 0183 is a point-to-point serial protocol carrying one ASCII sentence at a time, NMEA 2000 is a true network: every device has an address, messages use standardized Parameter Group Numbers (PGNs), and instruments can both transmit and receive on the same physical wire.</p>
+<p>Despite these advantages, Wings Analytics ingests data in the older NMEA 0183 text format. The reasons are practical:</p>
+<ul>
+<li><strong>Simplicity of parsing.</strong> NMEA 0183 sentences are human-readable ASCII text. Parsing them requires only basic string splitting — no binary decoding libraries, no PGN lookup tables, and no endianness handling. This makes the R-based pipeline straightforward and transparent.</li>
+<li><strong>Broad tooling support.</strong> Open-source charting and logging software — most importantly OpenCPN, which Wings uses as its onboard data recorder — has mature, well-tested support for NMEA 0183 logging to plain <code>.txt</code> files. NMEA 2000 logging typically requires proprietary or more complex tooling.</li>
+<li><strong>Sufficient data content.</strong> The three sentence types used by Wings Analytics (RMC, VHW, MWV) capture position, boat speed, and wind — the core variables needed for track reconstruction and polar analysis. NMEA 2000 carries richer data (engine telemetry, tank levels, AIS targets), but none of those additional PGNs are required for the current analysis scope.</li>
+<li><strong>Portability.</strong> Plain text files are trivially stored, transferred, and version-controlled. Binary NMEA 2000 logs require specialized viewers and are harder to inspect or debug.</li>
+</ul>
+<p>In short, NMEA 2000 runs the boat’s live instrument network; NMEA 0183 is used as the data export format because it is simpler, more portable, and fully sufficient for the analytics performed here.</p>
+</section>
+<section id="data-recording-and-upload" class="level2">
+<h2 class="anchored" data-anchor-id="data-recording-and-upload">Data Recording and Upload</h2>
+<p>The onboard data recording chain works as follows:</p>
+<ol type="1">
+<li><p><strong>B&amp;G NMEA 2000 Network.</strong> Wings’ instruments — GPS, wind sensor, knotmeter, and multifunction display — communicate over a B&amp;G NMEA 2000 backbone. This is the boat’s primary instrument bus, providing real-time data to helm displays and autopilot.</p></li>
+<li><p><strong>Yacht Devices NMEA 2000 Gateway.</strong> A Yacht Devices YDNG-03 gateway bridges the NMEA 2000 network to NMEA 0183. The gateway listens to all traffic on the N2K backbone, translates relevant PGNs into standard NMEA 0183 ASCII sentences, and outputs them over a serial or Wi-Fi connection. This is the critical translation step that converts the binary N2K data into the text-based format that OpenCPN and the analytics pipeline can consume.</p></li>
+<li><p><strong>OpenCPN Data Logging.</strong> OpenCPN, an open-source chart plotter and navigation application, runs on a laptop aboard Wings. It connects to the Yacht Devices gateway and receives the translated NMEA 0183 sentence stream. OpenCPN logs these sentences to timestamped <code>.txt</code> files — one file per session — creating a complete record of every GPS fix, speed reading, and wind observation during the sail.</p></li>
+<li><p><strong>Starlink Upload to Cloud Storage.</strong> After racing (or during, if connectivity allows), the logged <code>.txt</code> files are uploaded from the onboard laptop to a cloud drive via a Starlink satellite internet connection. This makes the raw data available from shore without needing to physically transfer files from the boat.</p></li>
+<li><p><strong>Analytics Ingestion.</strong> The Wings Analytics pipeline scans the cloud-synced data directory for <code>.txt</code> files, parses them through the NMEA pipeline described below, and builds the structured dataset that powers the Shiny application.</p></li>
+</ol>
+</section>
+<section id="common-uses-in-sailing" class="level2">
+<h2 class="anchored" data-anchor-id="common-uses-in-sailing">Common Uses in Sailing</h2>
+<p>On a racing sailboat like Wings, multiple NMEA-capable instruments feed data onto a shared bus. The GPS unit broadcasts position and speed fixes (RMC sentences), the knotmeter sends boat speed through water (VHW sentences), and the wind instrument transmits wind angle and speed (MWV sentences). A data logger records these sentences to a text file, creating a complete time-stamped record of the boat’s performance throughout a race.</p>
+<p>This raw log is the foundation of Wings Analytics: thousands of NMEA sentences per race, each carrying a snapshot of position, speed, or wind conditions, which the application parses, synchronizes, and transforms into structured performance data.</p>
+</section>
+</section>
+<section id="data-pipeline" class="level1">
+<h1>Data Pipeline</h1>
+<p>The application uses a multi-stage pipeline to convert raw text-based NMEA sentences into a structured, analysis-ready dataset.</p>
+<section id="raw-data-ingestion" class="level2">
+<h2 class="anchored" data-anchor-id="raw-data-ingestion">Raw Data Ingestion</h2>
+<p>The system scans a configured data directory for <code>.txt</code> files containing standard NMEA 0183 sentences. Three sentence types are parsed:</p>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 9%">
+<col style="width: 68%">
+<col style="width: 21%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Sentence</th>
+<th>Data Provided</th>
+<th>Parser Function</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>$..RMC</code></td>
+<td>Latitude, longitude, speed over ground (SOG), course over ground (COG), UTC date/time</td>
+<td><code>parse_rmc_any()</code></td>
+</tr>
+<tr class="even">
+<td><code>$..VHW</code></td>
+<td>Boat speed through water (STW)</td>
+<td><code>parse_boat_speed()</code></td>
+</tr>
+<tr class="odd">
+<td><code>$..MWV</code></td>
+<td>True or apparent wind angle (TWA) and wind speed (TWS), with unit conversion (knots, m/s, km/h)</td>
+<td><code>parse_wind_mwv()</code></td>
+</tr>
+</tbody>
+</table>
+<p>Coordinate parsing converts NMEA degree-minute format to decimal degrees via <code>convert_degmin()</code>. Date and time fields from the RMC sentence are combined into a UTC <code>POSIXct</code> timestamp, then converted to the local timezone (Eastern) for display and calendar matching.</p>
+</section>
+<section id="processing-and-synchronization" class="level2">
+<h2 class="anchored" data-anchor-id="processing-and-synchronization">Processing and Synchronization</h2>
+<p>Different NMEA sentences are recorded at varying intervals and do not share a common timestamp. GPS fixes typically arrive once per second, while wind and speed instruments may report at different rates. The pipeline uses <code>$..RMC</code> sentences as the primary time anchor. The function <code>nearest_sync_by_line_index()</code> aligns wind and boat speed observations to their nearest RMC record by raw file line number using <code>findInterval()</code>. This approach is efficient and avoids expensive datetime joins across hundreds of thousands of records.</p>
+<p>After synchronization, aggregated values (mean STW, mean wind speed and angle) are joined to the RMC track by <code>datetime_utc</code>, producing a single unified time series with position, boat speed, and wind data on every row.</p>
+</section>
+<section id="data-cleaning" class="level2">
+<h2 class="anchored" data-anchor-id="data-cleaning">Data Cleaning</h2>
+<p>Several cleaning steps are applied to the synchronized track data:</p>
+<ul>
+<li><strong>Speed filtering</strong>: SOG values above 15 knots are excluded, as they indicate GPS noise or sensor errors rather than actual sailing speed. STW values below 2 knots are excluded from performance averages to filter out erroneous readings during mark roundings or pre-start maneuvering.</li>
+<li><strong>Exclusion zone</strong>: Track points within 1,000 feet of a fixed coordinate (the home dock) are removed to exclude pre-race instrument warmup data.</li>
+<li><strong>Teleport detection</strong>: Isolated GPS points that imply physically impossible jumps (e.g., from UTC date-rollover bugs) are detected by computing implied speed to both temporal neighbors. If a point implies speeds exceeding 30 knots to both its predecessor and successor, it is dropped.</li>
+</ul>
+</section>
+<section id="storage" class="level2">
+<h2 class="anchored" data-anchor-id="storage">Storage</h2>
+<p>The processed dataset is serialized into <code>track_data.rds</code> as a named list containing four elements:</p>
+<ul>
+<li><code>track_all</code>: The synchronized track data with all sensor channels merged. Each row is a GPS fix with latitude, longitude, SOG, COG, STW, TWA, TWS, polar reference speed, and polar performance deltas.</li>
+<li><code>polar_ref</code>: The raw reference polar table from <code>Polars.xlsx</code> in wide format (TWS columns × TWA rows).</li>
+<li><code>polar_ref_long</code>: The polar table pivoted to long format (<code>tws</code>, <code>twa</code>, <code>bsp_ref</code>) for joining to track observations.</li>
+<li><code>race_calendar</code>: The normalized race calendar from <code>Race Calendar.xlsx</code>, enriched with pre-computed race-level aggregate statistics (see Pre-computed Race Statistics below).</li>
+</ul>
+<p>This allows the Shiny app to load a pre-computed dataset on startup without re-parsing raw files each session. Race narratives are cached separately in <code>race_narratives.rds</code> to allow independent rebuilding without reprocessing the full data pipeline.</p>
+</section>
+<section id="pre-computed-race-statistics" class="level2">
+<h2 class="anchored" data-anchor-id="pre-computed-race-statistics">Pre-computed Race Statistics</h2>
+<p>During the rebuild step, aggregate performance statistics are computed for each race by joining track data to calendar time windows, then grouped and summarized per race. These statistics are stored directly in the <code>race_calendar</code> element of the RDS file:</p>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 38%">
+<col style="width: 61%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Column</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>race_date</code></td>
+<td>Calendar date of race start</td>
+</tr>
+<tr class="even">
+<td><code>duration_hrs</code></td>
+<td>Elapsed time from start to end (hours)</td>
+</tr>
+<tr class="odd">
+<td><code>days_on_water</code></td>
+<td>Number of calendar days spanned</td>
+</tr>
+<tr class="even">
+<td><code>nmea_count</code></td>
+<td>Total GPS fix count within the race window</td>
+</tr>
+<tr class="odd">
+<td><code>avg_stw</code></td>
+<td>Mean STW (knots), excluding values below 2 knots</td>
+</tr>
+<tr class="even">
+<td><code>max_stw</code></td>
+<td>Maximum STW (knots), excluding values below 2 knots</td>
+</tr>
+<tr class="odd">
+<td><code>max_tws</code></td>
+<td>Maximum true wind speed (knots)</td>
+</tr>
+<tr class="even">
+<td><code>polar_perf_stw</code></td>
+<td>Mean STW polar performance delta (observed − reference)</td>
+</tr>
+</tbody>
+</table>
+<p>This pre-computation is a key performance optimization. Previously, these statistics were computed at runtime inside the <code>season_races()</code> reactive expression, which required an expensive many-to-many join between the full track dataset (millions of GPS points) and the race calendar on every season or series filter change. By computing the stats once during the rebuild step and storing them alongside the calendar metadata, the runtime reactive becomes a simple filter on a small dataframe — effectively instant regardless of how much track data exists.</p>
+</section>
+</section>
+<section id="polar-performance" class="level1">
+<h1>Polar Performance</h1>
+<p>A core feature is comparing observed boat performance against a theoretical reference polar model loaded from <code>Polars.xlsx</code>.</p>
+<section id="what-are-polars" class="level2">
+<h2 class="anchored" data-anchor-id="what-are-polars">What Are Polars?</h2>
+<p>A polar diagram (or polar table) describes a sailboat’s theoretical target speed at every combination of true wind speed (TWS) and true wind angle (TWA). These targets are derived from velocity prediction programs (VPPs) that model the boat’s hull shape, sail plan, and displacement. In practice, polars serve as a benchmark: if the boat is sailing slower than the polar target for the current wind conditions, there is likely room to improve sail trim, steering, or tactical positioning.</p>
+</section>
+<section id="how-polar-binning-works" class="level2">
+<h2 class="anchored" data-anchor-id="how-polar-binning-works">How Polar Binning Works</h2>
+<p>Observed TWS and TWA values are snapped to the nearest reference polar grid point using <code>findInterval()</code> with <code>all.inside = TRUE</code>. This creates discrete bins that match the reference table’s TWS and TWA breakpoints. Observed speeds are then averaged within each bin and compared to the reference value.</p>
+</section>
+<section id="performance-metrics" class="level2">
+<h2 class="anchored" data-anchor-id="performance-metrics">Performance Metrics</h2>
+<p>Two delta metrics are computed for every track observation that has valid wind and speed data:</p>
+<ul>
+<li><strong>STW Polar Performance</strong> = Observed STW − Reference BSP at the matched TWS/TWA bin. This isolates boat handling and sail trim quality, as STW is unaffected by current.</li>
+<li><strong>SOG Polar Performance</strong> = Observed SOG − Reference BSP. This captures the combined effect of boat handling plus environmental factors like current and tide.</li>
+</ul>
+<p>Positive values indicate the boat exceeded the reference polar; negative values indicate underperformance.</p>
+</section>
+<section id="polar-tables-in-the-app" class="level2">
+<h2 class="anchored" data-anchor-id="polar-tables-in-the-app">Polar Tables in the App</h2>
+<p>The Race Analytics tab presents five polar table views:</p>
+<ol type="1">
+<li><strong>Observed STW Polars</strong>: Average STW in each TWS/TWA bin for the selected race.</li>
+<li><strong>Observed SOG Polars</strong>: Average SOG in each bin.</li>
+<li><strong>Reference Polars</strong>: The theoretical target speeds from <code>Polars.xlsx</code>.</li>
+<li><strong>STW Polar Performance</strong>: STW minus reference, with a per-row “Ave Perf” column and a column footer showing average performance per TWA bin.</li>
+<li><strong>SOG Polar Performance</strong>: SOG minus reference, with the same per-row and footer summary statistics.</li>
+</ol>
+</section>
+</section>
+<section id="race-calendar-integration" class="level1">
+<h1>Race Calendar Integration</h1>
+<p>The system integrates an external Excel calendar (<code>Race Calendar.xlsx</code>) to label track data with race context.</p>
+<section id="calendar-structure" class="level2">
+<h2 class="anchored" data-anchor-id="calendar-structure">Calendar Structure</h2>
+<p>The calendar is organized as a multi-sheet Excel workbook, where each sheet represents a racing season (e.g., “2024-25 Winter”). Within each sheet, rows define individual race events.</p>
+<p>The calendar is expected to have at minimum: <code>race</code>, <code>start</code>, and <code>end</code>. Additional recognized columns include <code>helm</code>, <code>headsail</code>, <code>mainsail</code>, <code>season</code>, <code>series</code>, <code>place</code>, <code>fleet</code>, and <code>length</code>. Column names are normalized to lowercase with underscores via <code>normalize_excel_names()</code>. Common variations like <code>head_sai</code>, <code>head_sail</code>, and <code>main_sail</code> are automatically renamed to <code>headsail</code> and <code>mainsail</code>.</p>
+</section>
+<section id="matching-process" class="level2">
+<h2 class="anchored" data-anchor-id="matching-process">Matching Process</h2>
+<p>During RDS construction (<code>rebuild_rds_from_raw()</code>), each calendar entry defines a time window. The pipeline iterates through calendar rows and labels all track points whose local datetime falls within the <code>start</code>–<code>end</code> window with the corresponding race name, helm, and headsail. This means a single race name (e.g., “Thursday Night Race”) can appear multiple times in the calendar on different dates, and each occurrence is treated as a distinct race event.</p>
+</section>
+<section id="future-race-filtering" class="level2">
+<h2 class="anchored" data-anchor-id="future-race-filtering">Future Race Filtering</h2>
+<p>At startup, races whose start time is in the future (relative to the current local time) are filtered out of the loaded race calendar, so only past and current races appear in the application.</p>
+</section>
+</section>
+<section id="app-structure" class="level1">
+<h1>App Structure</h1>
+<p>The Shiny application is organized into four tabs, with a branded header and footer framing the content.</p>
+<section id="header-and-footer" class="level2">
+<h2 class="anchored" data-anchor-id="header-and-footer">Header and Footer</h2>
+<p>The header displays the J112e sailboat image, the “Wings Analytics” title with the subtitle “AI-Inspired • Sailing Performance • Racing Intelligence”, and the DIYC (Davis Island Yacht Club) burgee. The footer shows a copyright notice and the AI6 branding image.</p>
+</section>
+<section id="race-seasons" class="level2">
+<h2 class="anchored" data-anchor-id="race-seasons">Race Seasons</h2>
+<p>A season-level summary of all races in the calendar. The user selects a season and optionally a race series from dropdown filters. Seasons run June through May, as noted in the UI. An AI-generated narrative provides contextual commentary: when “All” is selected, a program-wide performance narrative is displayed (labeled “AI Narrative - Wings Sailing Program”); for a specific season, a season-specific narrative is shown (labeled “AI Race Season Report”).</p>
+<p>Below the narrative, two summary tables aggregate key statistics:</p>
+<ul>
+<li><strong>Season Summary Table</strong>: One row per season showing race count, days on water, hours sailed, a combined “Place / Fleet / %” column (average place, average fleet, and the percentage), nautical miles, average STW, max STW, max TWS, polar performance (mean STW delta from reference), and NMEA data point count. When a single season is selected, this table contains one row; when “All” is selected, it shows one row per season.</li>
+<li><strong>Series Summary Table</strong>: One row per race series with the same columns. When a specific series is selected, this table contains one row; when “All” is selected, it shows one row per series.</li>
+</ul>
+<p>Both summary tables include a footer row with totals (for additive metrics like races, days, distance, hours, and NMEA points), averages (for Place / Fleet / %, Avg STW, Polar Perf), and maximums (for Max STW, Max TWS).</p>
+<p>Below the summary tables, a detailed race list displays each race event with: a row number (#), a formatted Race field combining date, series, and race name (e.g., “06/15/2025 • Thursday Night • Race Name”), days on water, hours sailed, Place / Fleet / %, nautical miles, average STW, max STW, max TWS, polar performance, and NMEA data point count. Races with the same name on different dates are listed as separate rows (grouped by race name and start date). The race list footer shows the total number of races and aggregate statistics matching the summary table footer logic.</p>
+</section>
+<section id="race-analytics" class="level2">
+<h2 class="anchored" data-anchor-id="race-analytics">Race Analytics</h2>
+<p>Displays detailed analysis for a single race selected via season, series, and race dropdowns. Dropdowns are ordered most recent to oldest, with the most recent race selected by default. When the season changes, the series and race dropdowns update dynamically. At the top, a summary table shows key metrics:</p>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 50%">
+<col style="width: 50%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Metric</th>
+<th>Source</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Race name, date, distance, place/fleet</td>
+<td>Race calendar</td>
+</tr>
+<tr class="even">
+<td>Elapsed time (formatted as Xh XXm XXs)</td>
+<td>Track data (max − min local time)</td>
+</tr>
+<tr class="odd">
+<td>Avg/Max STW and SOG</td>
+<td>Track data</td>
+</tr>
+<tr class="even">
+<td>Avg/Max TWS</td>
+<td>Track data</td>
+</tr>
+<tr class="odd">
+<td>STW and SOG Polar Performance</td>
+<td>Track data (mean of per-observation deltas)</td>
+</tr>
+</tbody>
+</table>
+<p>Below the summary:</p>
+<ul>
+<li><strong>AI Race Report</strong>: A deterministically generated narrative analyzing the race’s distance, placement, speed, wind conditions, and polar performance in context of the full racing history. The narrative uses a hash-based seed derived from the race name and date to ensure the same race always produces the same narrative. Maritime quotes are woven throughout for character. The narrative also distinguishes between early seasons (where instrument calibration may have been imprecise) and recent seasons (2025+) when interpreting polar performance numbers.</li>
+<li><strong>Leaflet map</strong>: GPS track rendered as polylines, color-coded by day (local date) to distinguish legs of multiday races. Includes a day legend.</li>
+<li><strong>Speed plot</strong>: Raw SOG and STW traces overlaid with 1-minute moving averages, built with ggplot2.</li>
+<li><strong>Polar tables</strong>: Five sub-tabs as described in the Polar Performance section above.</li>
+</ul>
+</section>
+<section id="social" class="level2">
+<h2 class="anchored" data-anchor-id="social">Social</h2>
+<p>Links to external content organized in styled card sections:</p>
+<ul>
+<li><strong>Music on Spotify</strong>: A link to the Wings J112 Spotify artist page, followed by a grid of individual track links.</li>
+<li><strong>Videos on YouTube</strong>: Links to Wings sailing videos.</li>
+<li><strong>Swag Shop</strong>: A link to the Wings merchandise shop on DistroKid.</li>
+</ul>
+</section>
+<section id="about" class="level2">
+<h2 class="anchored" data-anchor-id="about">About</h2>
+<p>Links and controls organized in card sections:</p>
+<ul>
+<li><strong>Documentation</strong>: A link to this documentation (rendered HTML served from the <code>www/</code> directory).</li>
+<li><strong>Project Source</strong>: A link to the Wings Analytics GitHub repository.</li>
+<li><strong>Data File Management</strong>: Password-protected controls (password: “wings”) for managing data files locally. Operations include rebuilding race narratives, deleting the narratives file, and deleting the track data RDS. These controls are only functional when running locally; they are hidden or disabled on deployed instances.</li>
+</ul>
+</section>
+</section>
+<section id="ai-generated-narratives" class="level1">
+<h1>AI-Generated Narratives</h1>
+<p>The application includes three narrative generators that produce deterministic, data-driven commentary:</p>
+<ul>
+<li><strong><code>generate_race_narrative()</code></strong>: Produces a per-race analysis covering distance, placement, speed performance, SOG-STW differential (indicating current effects), polar performance, wind conditions, headsail selection, and helm. The narrative adapts its language based on how the race’s metrics compare to the full racing history (e.g., percentile-based descriptions for speed and wind).</li>
+<li><strong><code>generate_season_narrative()</code></strong>: Produces a season-level summary covering race count, date range, series breakdown, total distance, placement statistics (wins, top-half percentage), speed and wind averages, and polar performance trends. Distinguishes between earlier seasons with uncalibrated instruments and recent seasons with reliable data.</li>
+<li><strong><code>generate_performance_narrative()</code></strong>: Produces a program-wide narrative spanning all seasons, covering the overall trajectory of placement, speed, and polar performance evolution. Identifies trends across seasons and contextualizes early-season calibration artifacts.</li>
+</ul>
+<p>All narratives use a deterministic quote selection mechanism: a hash computed from the race name and date seeds a picker function, ensuring the same race always produces the same narrative without randomness. Maritime quotes from a curated pool are woven throughout for personality. Narratives are cached in <code>race_narratives.rds</code> and can be rebuilt independently from the About tab.</p>
+</section>
+<section id="deployment" class="level1">
+<h1>Deployment</h1>
+<p>The application supports two modes of operation controlled by environment detection:</p>
+<ul>
+<li><strong>Local development</strong>: If <code>track_data.rds</code> is missing, the app rebuilds it from raw <code>.txt</code> files, <code>Race Calendar.xlsx</code>, and <code>Polars.xlsx</code> in the configured data directory. This ensures the latest data is always incorporated.</li>
+<li><strong>Deployed (shinyapps.io / Posit Connect)</strong>: Rebuilding is disabled. The <code>track_data.rds</code> file must be included in the deployment bundle alongside <code>app.R</code>. This avoids dependency on external file paths and ensures fast, reliable startup.</li>
+</ul>
+<p>Environment detection checks for standard deployment environment variables (<code>SHINY_PORT</code>, <code>RSCONNECT_SERVER</code>, <code>RSCONNECT_URL</code>, <code>RSCONNECT_ACCOUNT</code>, <code>RS_CONNECT_SERVER</code>, <code>SHINY_SERVER_VERSION</code>). The <code>IS_DEPLOYED</code> flag controls whether <code>rebuild_rds_from_raw()</code> is permitted to run.</p>
+</section>
+<section id="the-r-ecosystem" class="level1">
+<h1>The R Ecosystem</h1>
+<section id="r" class="level2">
+<h2 class="anchored" data-anchor-id="r">R</h2>
+<p>R is a free, open-source programming language designed for statistical computing and data analysis. It was created in the early 1990s by Ross Ihaka and Robert Gentleman at the University of Auckland, New Zealand, as an open-source implementation of the S language developed at Bell Laboratories. R is maintained by the R Core Team and distributed through the Comprehensive R Archive Network (CRAN), which hosts over 20,000 contributed packages covering statistics, machine learning, visualization, spatial analysis, and virtually every other quantitative discipline.</p>
+<p>R’s strengths are in data manipulation, statistical modeling, and visualization. Its built-in data frame structure, formula-based modeling syntax, and rich package ecosystem make it a natural choice for projects like Wings Analytics, where raw sensor data must be parsed, cleaned, joined, aggregated, and visualized. The <code>tidyverse</code> family of packages (dplyr, tidyr, ggplot2, readr, and others) provides a consistent grammar for data wrangling that is used extensively throughout this project.</p>
+</section>
+<section id="rstudio" class="level2">
+<h2 class="anchored" data-anchor-id="rstudio">RStudio</h2>
+<p>RStudio is an integrated development environment (IDE) purpose-built for R (and now Python as well). It was first released in 2011 by J.J. Allaire and provides a unified interface combining a code editor, R console, file browser, plot viewer, help system, environment inspector, and package manager. RStudio transformed R from a command-line-centric language into an accessible platform for data science by making the development workflow visual and interactive.</p>
+<p>RStudio is developed by Posit, PBC (formerly RStudio, PBC), which rebranded in 2022 to reflect its expanding support for multilingual data science. Posit maintains both the open-source RStudio Desktop IDE and commercial server products, and is the primary corporate sponsor of many of R’s most widely used packages.</p>
+</section>
+<section id="posit-assistant" class="level2">
+<h2 class="anchored" data-anchor-id="posit-assistant">Posit Assistant</h2>
+<p>Posit Assistant is an AI-powered coding assistant integrated directly into RStudio. It provides context-aware help for R and Python development, including code generation, debugging, statistical guidance, and data analysis support. Posit Assistant can execute code in the user’s active R session, read and write project files, and interact with the workspace — making it a collaborative tool rather than a detached chatbot.</p>
+<p>Wings Analytics was developed collaboratively with Posit Assistant. The AI assistant contributed to NMEA parsing logic, data pipeline design, Shiny UI construction, polar performance calculations, and this documentation. This represents a practical example of AI-assisted development: the domain expertise (sailing, racing tactics, instrument systems) came from the developer, while the assistant accelerated implementation by generating code, suggesting architectural patterns, debugging edge cases, and drafting documentation from technical context.</p>
+</section>
+<section id="shiny" class="level2">
+<h2 class="anchored" data-anchor-id="shiny">Shiny</h2>
+<p>Shiny is an R package that turns R scripts into interactive web applications without requiring any knowledge of HTML, CSS, or JavaScript. Created by Joe Cheng at RStudio (now Posit) and first released in December 2012, Shiny was a breakthrough in making R accessible beyond the console. Before Shiny, sharing R-based analyses with non-technical stakeholders typically meant exporting static reports or building custom web applications with frameworks like Flask or Django in other languages. Shiny eliminated that gap by letting R users define a UI and a server function in pure R, with the framework handling all HTTP communication, WebSocket-based reactivity, and browser rendering automatically.</p>
+<p>Shiny’s core innovation is its <strong>reactive programming model</strong>. Rather than writing explicit event handlers or callback functions (as in traditional web frameworks), the developer writes R expressions that declare <em>what</em> should happen when inputs change, and Shiny’s reactive graph automatically determines <em>when</em> to re-execute them. This declarative approach, inspired by spreadsheet-style dependency tracking, makes it natural for statisticians and data scientists to build interactive tools without learning event-driven programming patterns. Shiny has since grown to support custom JavaScript bindings, modules for code organization, async execution for scalability, and <code>bindCache()</code> for reactive output caching — a feature Wings Analytics uses extensively to avoid redundant recomputation.</p>
+<p>Wings Analytics is a Shiny application. The entire platform — interactive maps, filterable tables, polar performance grids, season summaries, and AI-generated race narratives — is built in a single <code>app.R</code> file using standard Shiny patterns. The UI uses Shiny’s <code>fluidPage()</code> layout with extensive custom CSS implementing a dark glass-morphism aesthetic with semi-transparent panels, subtle borders, and responsive styling.</p>
+</section>
+<section id="github" class="level2">
+<h2 class="anchored" data-anchor-id="github">GitHub</h2>
+<p>The Wings Analytics source code is maintained in a Git repository hosted on GitHub. GitHub is a cloud-based platform for version control and collaboration built on top of Git, the distributed version control system created by Linus Torvalds in 2005. GitHub provides a web interface for browsing code, tracking changes, managing issues, and collaborating with other developers. It is the dominant platform for open-source software and is widely used for private projects as well.</p>
+<p>For Wings Analytics, GitHub serves as the canonical code repository — every change to the application, data pipeline, and documentation is tracked with a full history of commits. RStudio has built-in Git integration, making it straightforward to commit, push, and pull changes directly from the IDE. The repository also acts as a backup: if the development machine is lost, the entire project can be restored from GitHub. A link to the Wings Analytics GitHub repository is available in the app’s About tab.</p>
+<section id="deployment-at-near-zero-cost" class="level3">
+<h3 class="anchored" data-anchor-id="deployment-at-near-zero-cost">Deployment at Near-Zero Cost</h3>
+<p>One of Shiny’s most compelling features for independent projects is its deployment model. Posit offers <strong>shinyapps.io</strong>, a cloud hosting platform where Shiny applications can be deployed directly from RStudio with a single command (<code>rsconnect::deployApp()</code>). The free tier of shinyapps.io provides 25 active hours per month and up to 5 applications — more than sufficient for a personal analytics tool like Wings Analytics that is accessed intermittently by a small number of users.</p>
+<p>This means the entire Wings Analytics platform — from raw NMEA data to interactive web application — runs on a stack that costs essentially nothing:</p>
+<ul>
+<li><strong>R</strong>: Free and open-source.</li>
+<li><strong>RStudio Desktop</strong>: Free and open-source.</li>
+<li><strong>All R packages</strong> (Shiny, leaflet, DT, tidyverse, etc.): Free and open-source.</li>
+<li><strong>shinyapps.io hosting</strong>: Free tier available.</li>
+<li><strong>OpenCPN</strong>: Free and open-source.</li>
+</ul>
+<p>The only costs in the pipeline are hardware (the onboard laptop and Yacht Devices gateway) and the Starlink internet subscription, both of which serve broader purposes beyond analytics. The result is a fully functional, publicly accessible sailing performance platform built and hosted for virtually no incremental cost.</p>
+</section>
+</section>
+</section>
+<section id="performance-optimization" class="level1">
+<h1>Performance Optimization</h1>
+<p>Wings Analytics employs several strategies to minimize load times and ensure responsive interactions, despite operating on a dataset of millions of GPS track points.</p>
+<section id="two-phase-pipeline-architecture" class="level2">
+<h2 class="anchored" data-anchor-id="two-phase-pipeline-architecture">Two-Phase Pipeline Architecture</h2>
+<p>The application separates data processing into two distinct phases:</p>
+<ol type="1">
+<li><p><strong>Rebuild phase</strong> (local development only): Raw NMEA text files are parsed, synchronized, cleaned, joined with the race calendar, enriched with polar performance calculations, and serialized into a single <code>track_data.rds</code> file. Race-level aggregate statistics are pre-computed during this phase so that the deployed app never needs to perform expensive track-to-calendar joins. This phase runs only when <code>track_data.rds</code> is missing and the app is running locally.</p></li>
+<li><p><strong>Runtime phase</strong> (local and deployed): The app loads the pre-built <code>track_data.rds</code> file and serves interactive dashboards. All reactive computations operate on the pre-processed data, and Shiny’s <code>bindCache()</code> mechanism prevents redundant recomputation when users navigate between views.</p></li>
+</ol>
+</section>
+<section id="pre-computed-race-statistics-1" class="level2">
+<h2 class="anchored" data-anchor-id="pre-computed-race-statistics-1">Pre-computed Race Statistics</h2>
+<p>The single largest performance improvement is the pre-computation of race-level aggregate statistics during the rebuild phase. Previously, the <code>season_races()</code> reactive expression performed a many-to-many join between the full track dataset and the race calendar every time the user changed the season or series filter. For a dataset with millions of GPS points and dozens of races, this join was the most expensive user-triggered operation in the app.</p>
+<p>Now, these statistics (average STW, maximum STW, maximum TWS, polar performance, and NMEA point count) are computed once during <code>rebuild_rds_from_raw()</code> and stored directly in the <code>race_calendar</code> element of the RDS file. The runtime reactive simply filters the small calendar dataframe — an operation that completes in milliseconds regardless of track data size.</p>
+</section>
+<section id="reactive-caching-with-bindcache" class="level2">
+<h2 class="anchored" data-anchor-id="reactive-caching-with-bindcache">Reactive Caching with <code>bindCache()</code></h2>
+<p>Shiny’s reactive system uses lazy evaluation: a reactive expression only recomputes when one of its input dependencies changes. However, without caching, navigating <em>away</em> from a view and then <em>back</em> to it triggers a full recomputation even though the inputs haven’t actually changed (they were invalidated and then restored to their previous values).</p>
+<p><code>bindCache()</code> solves this by storing the output of reactive expressions and render functions in a session-scoped cache keyed on specified inputs. When the same input combination is requested again, the cached result is returned immediately. Wings Analytics applies <code>bindCache()</code> to the most expensive reactive outputs: the filtered race calendar, the filtered track dataset, the Leaflet map, the boat speed plot, and the season narrative.</p>
+</section>
+<section id="startup-processing" class="level2">
+<h2 class="anchored" data-anchor-id="startup-processing">Startup Processing</h2>
+<p>At app startup, after loading the RDS file, the track data undergoes several lightweight processing steps:</p>
+<ul>
+<li><strong>Timezone enforcement</strong>: UTC timestamps are re-parsed and converted to local Eastern time for display and calendar matching.</li>
+<li><strong>Teleport detection</strong>: Isolated GPS anomalies (caused by UTC date-rollover bugs in NMEA sentences) are detected by computing implied speed to temporal neighbors and removed.</li>
+<li><strong>UI column pre-computation</strong>: Derived columns used repeatedly in reactive expressions (local date, display-formatted race names, helm labels) are computed once at startup to avoid redundant per-reactive derivation.</li>
+</ul>
+<p>These steps are fast (sub-second for typical datasets) because they operate on pre-cleaned, pre-joined data from the RDS file rather than raw text.</p>
+</section>
+</section>
+<section id="technical-notes" class="level1">
+<h1>Technical Notes</h1>
+<ul>
+<li><strong>Timezone handling</strong>: All times are stored internally as UTC (<code>POSIXct</code>) and converted to Eastern time (<code>America/New_York</code>) for display and calendar matching via <code>lubridate::with_tz()</code>.</li>
+<li><strong>Excel datetime conversion</strong>: The <code>excel_to_posix_local()</code> helper handles multiple input types — <code>POSIXct</code>, <code>Date</code>, numeric Excel serial dates, and character strings — normalizing them all to local-timezone <code>POSIXct</code> values.</li>
+<li><strong>Geospatial calculations</strong>: The <code>geosphere</code> package provides Haversine distance calculations for exclusion zone filtering and teleport detection.</li>
+<li><strong>Interactive tables</strong>: DT (DataTables) powers all interactive tables, with custom JavaScript footer callbacks for computing column sums, averages, and maximums. Footer logic adapts per column type (e.g., averages for STW and Polar Perf, maximums for Max STW and Max TWS, sums for distance and hours, and a custom parser for the combined “Place / Fleet / %” column).</li>
+<li><strong>Mapping</strong>: The <code>leaflet</code> package renders GPS tracks as interactive polylines on OpenStreetMap tiles, color-coded by local date using <code>RColorBrewer</code> palettes.</li>
+<li><strong>Visual design</strong>: The app uses a dark theme implemented via inline CSS within <code>tags$style()</code>, with a glass-morphism card aesthetic featuring semi-transparent backgrounds, subtle borders, and box shadows. The layout uses Shiny’s standard <code>fluidPage()</code> with <code>fluidRow()</code>/<code>column()</code> grids.</li>
+<li><strong>AI narratives</strong>: Race and season narratives are deterministically generated from performance data and cached in <code>race_narratives.rds</code>. They use a hash-based quote selection mechanism to ensure the same race always produces the same narrative without randomness. The narrative generators distinguish between pre-2025 seasons (where speed sensor calibration was still being refined) and 2025+ seasons (where instruments are properly calibrated) when interpreting polar performance data.</li>
+<li><strong>Reactive caching with <code>bindCache()</code></strong>: Shiny’s <code>bindCache()</code> function stores the output of reactive expressions and render functions so that repeated evaluations with the same inputs return the cached result instead of re-executing the computation. This is distinct from Shiny’s built-in lazy evaluation (which only recomputes when inputs change) — <code>bindCache()</code> also avoids recomputation when users navigate <em>back</em> to a previously viewed state within the same session. Wings Analytics applies <code>bindCache()</code> to five key outputs:
+<ul>
+<li><code>season_races()</code> reactive — keyed on season and series selections — caches the filtered race calendar for the Race Seasons tab.</li>
+<li><code>track()</code> reactive — keyed on season, series, and race selections — caches the filtered track dataset for the selected race.</li>
+<li><code>output$map</code> (Leaflet map) — avoids re-transmitting all polyline coordinates to the browser when revisiting a race.</li>
+<li><code>output$plot_boat_speed</code> (ggplot speed chart) — avoids re-computing the moving average and re-rendering the plot.</li>
+<li><code>output$season_narrative_card</code> (AI narrative) — avoids re-generating the deterministic narrative text.</li>
+</ul></li>
+<li><strong>Pre-computed race statistics</strong>: Race-level aggregate statistics (average speed, max wind, polar performance, NMEA point counts) are computed once during the RDS rebuild step and stored in the <code>race_calendar</code> element. This eliminates the most expensive runtime computation — a many-to-many join between millions of track points and the race calendar — that previously ran on every season/series filter change. See the “Pre-computed Race Statistics” section under Data Pipeline for details.</li>
+</ul>
+</section>
+
+</main>
+<!-- /main column -->
+<script id="quarto-html-after-body" type="application/javascript">
+  window.document.addEventListener("DOMContentLoaded", function (event) {
+    const icon = "";
+    const anchorJS = new window.AnchorJS();
+    anchorJS.options = {
+      placement: 'right',
+      icon: icon
+    };
+    anchorJS.add('.anchored');
+    const isCodeAnnotation = (el) => {
+      for (const clz of el.classList) {
+        if (clz.startsWith('code-annotation-')) {                     
+          return true;
+        }
+      }
+      return false;
+    }
+    const onCopySuccess = function(e) {
+      // button target
+      const button = e.trigger;
+      // don't keep focus
+      button.blur();
+      // flash "checked"
+      button.classList.add('code-copy-button-checked');
+      var currentTitle = button.getAttribute("title");
+      button.setAttribute("title", "Copied!");
+      let tooltip;
+      if (window.bootstrap) {
+        button.setAttribute("data-bs-toggle", "tooltip");
+        button.setAttribute("data-bs-placement", "left");
+        button.setAttribute("data-bs-title", "Copied!");
+        tooltip = new bootstrap.Tooltip(button, 
+          { trigger: "manual", 
+            customClass: "code-copy-button-tooltip",
+            offset: [0, -8]});
+        tooltip.show();    
+      }
+      setTimeout(function() {
+        if (tooltip) {
+          tooltip.hide();
+          button.removeAttribute("data-bs-title");
+          button.removeAttribute("data-bs-toggle");
+          button.removeAttribute("data-bs-placement");
+        }
+        button.setAttribute("title", currentTitle);
+        button.classList.remove('code-copy-button-checked');
+      }, 1000);
+      // clear code selection
+      e.clearSelection();
+    }
+    const getTextToCopy = function(trigger) {
+      const outerScaffold = trigger.parentElement.cloneNode(true);
+      const codeEl = outerScaffold.querySelector('code');
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+    }
+    const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+      text: getTextToCopy
+    });
+    clipboard.on('success', onCopySuccess);
+    if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+      const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+        text: getTextToCopy,
+        container: window.document.getElementById('quarto-embedded-source-code-modal')
+      });
+      clipboardModal.on('success', onCopySuccess);
+    }
+      var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+      var mailtoRegex = new RegExp(/^mailto:/);
+        var filterRegex = new RegExp('/' + window.location.host + '/');
+      var isInternal = (href) => {
+          return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+      }
+      // Inspect non-navigation links and adorn them if external
+     var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+      for (var i=0; i<links.length; i++) {
+        const link = links[i];
+        if (!isInternal(link.href)) {
+          // undo the damage that might have been done by quarto-nav.js in the case of
+          // links that we want to consider external
+          if (link.dataset.originalHref !== undefined) {
+            link.href = link.dataset.originalHref;
+          }
+        }
+      }
+    function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+      const config = {
+        allowHTML: true,
+        maxWidth: 500,
+        delay: 100,
+        arrow: false,
+        appendTo: function(el) {
+            return el.parentElement;
+        },
+        interactive: true,
+        interactiveBorder: 10,
+        theme: 'quarto',
+        placement: 'bottom-start',
+      };
+      if (contentFn) {
+        config.content = contentFn;
+      }
+      if (onTriggerFn) {
+        config.onTrigger = onTriggerFn;
+      }
+      if (onUntriggerFn) {
+        config.onUntrigger = onUntriggerFn;
+      }
+      window.tippy(el, config); 
+    }
+    const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+    for (var i=0; i<noterefs.length; i++) {
+      const ref = noterefs[i];
+      tippyHover(ref, function() {
+        // use id or data attribute instead here
+        let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+        try { href = new URL(href).hash; } catch {}
+        const id = href.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note) {
+          return note.innerHTML;
+        } else {
+          return "";
+        }
+      });
+    }
+    const xrefs = window.document.querySelectorAll('a.quarto-xref');
+    const processXRef = (id, note) => {
+      // Strip column container classes
+      const stripColumnClz = (el) => {
+        el.classList.remove("page-full", "page-columns");
+        if (el.children) {
+          for (const child of el.children) {
+            stripColumnClz(child);
+          }
+        }
+      }
+      stripColumnClz(note)
+      if (id === null || id.startsWith('sec-')) {
+        // Special case sections, only their first couple elements
+        const container = document.createElement("div");
+        if (note.children && note.children.length > 2) {
+          container.appendChild(note.children[0].cloneNode(true));
+          for (let i = 1; i < note.children.length; i++) {
+            const child = note.children[i];
+            if (child.tagName === "P" && child.innerText === "") {
+              continue;
+            } else {
+              container.appendChild(child.cloneNode(true));
+              break;
+            }
+          }
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(container);
+          }
+          return container.innerHTML
+        } else {
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(note);
+          }
+          return note.innerHTML;
+        }
+      } else {
+        // Remove any anchor links if they are present
+        const anchorLink = note.querySelector('a.anchorjs-link');
+        if (anchorLink) {
+          anchorLink.remove();
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        if (note.classList.contains("callout")) {
+          return note.outerHTML;
+        } else {
+          return note.innerHTML;
+        }
+      }
+    }
+    for (var i=0; i<xrefs.length; i++) {
+      const xref = xrefs[i];
+      tippyHover(xref, undefined, function(instance) {
+        instance.disable();
+        let url = xref.getAttribute('href');
+        let hash = undefined; 
+        if (url.startsWith('#')) {
+          hash = url;
+        } else {
+          try { hash = new URL(url).hash; } catch {}
+        }
+        if (hash) {
+          const id = hash.replace(/^#\/?/, "");
+          const note = window.document.getElementById(id);
+          if (note !== null) {
+            try {
+              const html = processXRef(id, note.cloneNode(true));
+              instance.setContent(html);
+            } finally {
+              instance.enable();
+              instance.show();
+            }
+          } else {
+            // See if we can fetch this
+            fetch(url.split('#')[0])
+            .then(res => res.text())
+            .then(html => {
+              const parser = new DOMParser();
+              const htmlDoc = parser.parseFromString(html, "text/html");
+              const note = htmlDoc.getElementById(id);
+              if (note !== null) {
+                const html = processXRef(id, note);
+                instance.setContent(html);
+              } 
+            }).finally(() => {
+              instance.enable();
+              instance.show();
+            });
+          }
+        } else {
+          // See if we can fetch a full url (with no hash to target)
+          // This is a special case and we should probably do some content thinning / targeting
+          fetch(url)
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.querySelector('main.content');
+            if (note !== null) {
+              // This should only happen for chapter cross references
+              // (since there is no id in the URL)
+              // remove the first header
+              if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+                note.children[0].remove();
+              }
+              const html = processXRef(null, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      }, function(instance) {
+      });
+    }
+        let selectedAnnoteEl;
+        const selectorForAnnotation = ( cell, annotation) => {
+          let cellAttr = 'data-code-cell="' + cell + '"';
+          let lineAttr = 'data-code-annotation="' +  annotation + '"';
+          const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+          return selector;
+        }
+        const selectCodeLines = (annoteEl) => {
+          const doc = window.document;
+          const targetCell = annoteEl.getAttribute("data-target-cell");
+          const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+          const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+          const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+          const lineIds = lines.map((line) => {
+            return targetCell + "-" + line;
+          })
+          let top = null;
+          let height = null;
+          let parent = null;
+          if (lineIds.length > 0) {
+              //compute the position of the single el (top and bottom and make a div)
+              const el = window.document.getElementById(lineIds[0]);
+              top = el.offsetTop;
+              height = el.offsetHeight;
+              parent = el.parentElement.parentElement;
+            if (lineIds.length > 1) {
+              const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+              const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+              height = bottom - top;
+            }
+            if (top !== null && height !== null && parent !== null) {
+              // cook up a div (if necessary) and position it 
+              let div = window.document.getElementById("code-annotation-line-highlight");
+              if (div === null) {
+                div = window.document.createElement("div");
+                div.setAttribute("id", "code-annotation-line-highlight");
+                div.style.position = 'absolute';
+                parent.appendChild(div);
+              }
+              div.style.top = top - 2 + "px";
+              div.style.height = height + 4 + "px";
+              div.style.left = 0;
+              let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+              if (gutterDiv === null) {
+                gutterDiv = window.document.createElement("div");
+                gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+                gutterDiv.style.position = 'absolute';
+                const codeCell = window.document.getElementById(targetCell);
+                const gutter = codeCell.querySelector('.code-annotation-gutter');
+                gutter.appendChild(gutterDiv);
+              }
+              gutterDiv.style.top = top - 2 + "px";
+              gutterDiv.style.height = height + 4 + "px";
+            }
+            selectedAnnoteEl = annoteEl;
+          }
+        };
+        const unselectCodeLines = () => {
+          const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+          elementsIds.forEach((elId) => {
+            const div = window.document.getElementById(elId);
+            if (div) {
+              div.remove();
+            }
+          });
+          selectedAnnoteEl = undefined;
+        };
+          // Handle positioning of the toggle
+      window.addEventListener(
+        "resize",
+        throttle(() => {
+          elRect = undefined;
+          if (selectedAnnoteEl) {
+            selectCodeLines(selectedAnnoteEl);
+          }
+        }, 10)
+      );
+      function throttle(fn, ms) {
+      let throttle = false;
+      let timer;
+        return (...args) => {
+          if(!throttle) { // first call gets through
+              fn.apply(this, args);
+              throttle = true;
+          } else { // all the others get throttled
+              if(timer) clearTimeout(timer); // cancel #2
+              timer = setTimeout(() => {
+                fn.apply(this, args);
+                timer = throttle = false;
+              }, ms);
+          }
+        };
+      }
+        // Attach click handler to the DT
+        const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+        for (const annoteDlNode of annoteDls) {
+          annoteDlNode.addEventListener('click', (event) => {
+            const clickedEl = event.target;
+            if (clickedEl !== selectedAnnoteEl) {
+              unselectCodeLines();
+              const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+              if (activeEl) {
+                activeEl.classList.remove('code-annotation-active');
+              }
+              selectCodeLines(clickedEl);
+              clickedEl.classList.add('code-annotation-active');
+            } else {
+              // Unselect the line
+              unselectCodeLines();
+              clickedEl.classList.remove('code-annotation-active');
+            }
+          });
+        }
+    const findCites = (el) => {
+      const parentEl = el.parentElement;
+      if (parentEl) {
+        const cites = parentEl.dataset.cites;
+        if (cites) {
+          return {
+            el,
+            cites: cites.split(' ')
+          };
+        } else {
+          return findCites(el.parentElement)
+        }
+      } else {
+        return undefined;
+      }
+    };
+    var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+    for (var i=0; i<bibliorefs.length; i++) {
+      const ref = bibliorefs[i];
+      const citeInfo = findCites(ref);
+      if (citeInfo) {
+        tippyHover(citeInfo.el, function() {
+          var popup = window.document.createElement('div');
+          citeInfo.cites.forEach(function(cite) {
+            var citeDiv = window.document.createElement('div');
+            citeDiv.classList.add('hanging-indent');
+            citeDiv.classList.add('csl-entry');
+            var biblioDiv = window.document.getElementById('ref-' + cite);
+            if (biblioDiv) {
+              citeDiv.innerHTML = biblioDiv.innerHTML;
+            }
+            popup.appendChild(citeDiv);
+          });
+          return popup.innerHTML;
+        });
+      }
+    }
+  });
+  </script>
+</div> <!-- /content -->
+
+
+
+
+</body></html>
