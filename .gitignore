@@ -9,3 +9,5 @@
 /.quarto/
 **/*.quarto_ipynb
 track_data.rds
+track_data_reference.rds
+track_data_reference.rds
