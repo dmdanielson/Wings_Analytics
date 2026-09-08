@@ -11,3 +11,6 @@
 track_data.rds
 track_data_reference.rds
 track_data_reference.rds
+track_data_rebuilt.rds
+tests/testthat/_snaps/*.new.md
+tests/testthat/_snaps/*.new.md
