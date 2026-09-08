@@ -22,7 +22,7 @@
         "names": {
           "type": "character",
           "attributes": {},
-          "value": ["line_index", "datetime_utc", "sentence", "latitude", "longitude", "sog_knots", "cog_deg"]
+          "value": ["line_index", "datetime_utc", "sentence", "latitude", "longitude", "sog_knots", "cog_deg", "mode_indicator"]
         },
         "row.names": {
           "type": "integer",
@@ -81,6 +81,11 @@
           "type": "double",
           "attributes": {},
           "value": [84.4, 215.7, "NA"]
+        },
+        {
+          "type": "character",
+          "attributes": {},
+          "value": [null, null, null]
         }
       ]
     }
@@ -103,7 +108,7 @@
         "names": {
           "type": "character",
           "attributes": {},
-          "value": ["line_index", "datetime_utc", "sentence", "latitude", "longitude", "sog_knots", "cog_deg"]
+          "value": ["line_index", "datetime_utc", "sentence", "latitude", "longitude", "sog_knots", "cog_deg", "mode_indicator"]
         }
       },
       "value": [
@@ -150,6 +155,11 @@
         },
         {
           "type": "double",
+          "attributes": {},
+          "value": []
+        },
+        {
+          "type": "character",
           "attributes": {},
           "value": []
         }

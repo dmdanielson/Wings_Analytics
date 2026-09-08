@@ -105,3 +105,90 @@ test_that("excel_to_posix_local handles Date and POSIXct inputs", {
 test_that("excel_to_posix_local returns NA for unsupported types", {
   expect_snapshot_value(excel_to_posix_local(TRUE), style = "json2")
 })
+
+test_that("filter_gps_glitches removes a sawtooth excursion block", {
+  # 41 fixes on a straight eastbound track at 6 kn, 3s apart. Fixes 21-22 are
+  # displaced 100 m north (a "sawtooth": jump off, hold for 2 fixes, snap
+  # back). Each excursion fix is fast to only ONE neighbor (the entry/exit
+  # step), never both, so the isolated-teleport check (class 2) cannot catch
+  # it - this exercises the chord cross-track check (class 3) specifically.
+  n <- 41
+  t0 <- as.POSIXct("2026-01-01 12:00:00", tz = "America/New_York")
+  df <- data.frame(
+    datetime_local = t0 + (0:(n - 1)) * 3,
+    latitude = 0,
+    longitude = (0:(n - 1)) * 0.0001387,  # ~15.4 m/step east, i.e. 6 kn
+    sog_knots = 6
+  )
+  excursion_idx <- c(21, 22)
+  df$latitude[excursion_idx] <- df$latitude[excursion_idx] + 100 / 111320
+
+  out <- filter_gps_glitches(df)
+
+  expect_equal(nrow(out), n - length(excursion_idx))
+  expect_false(any(df$datetime_local[excursion_idx] %in% out$datetime_local))
+  expect_true(all(out$latitude == 0))
+})
+
+test_that("drop_stale_rmc drops a replayed burst of stale timestamps", {
+  # A single real GPS feed's fixes should have non-decreasing embedded UTC
+  # time in file order. Simulate a session where, mid-stream, the feed
+  # replays a ~4-minute-old batch of fixes at a different position (as found
+  # in the raw 2026-09-06 log, which produced a "sawtooth" on the track map)
+  # before resuming forward. The stale burst should be dropped entirely,
+  # leaving only the genuine forward-moving sequence intact and in order.
+  t0 <- as.POSIXct("2026-01-01 12:00:00", tz = "UTC")
+  good_times  <- t0 + 0:19
+  stale_times <- t0 + (0:4) - 240  # ~4 minutes behind, inserted mid-stream
+  df <- data.frame(
+    line_index = seq_len(25),
+    datetime_utc = c(good_times[1:10], stale_times, good_times[11:20]),
+    latitude = c(seq(0, 0.001, length.out = 10), rep(99, 5),
+                 seq(0.0011, 0.002, length.out = 10)),
+    longitude = 0
+  )
+
+  out <- drop_stale_rmc(df)
+
+  expect_equal(nrow(out), 20)
+  expect_true(all(out$latitude != 99))
+  expect_true(all(diff(as.numeric(out$datetime_utc)) >= 0))
+})
+
+test_that("drop_stale_rmc does not let a single corrupt future timestamp poison later rows", {
+  # A garbled date field can parse to a wildly wrong (often far-future) date.
+  # Regression: this single bad row used to set the running max, making every
+  # genuine fix afterward look "behind" and get dropped wholesale (found on
+  # the full multi-season dataset: one row parsed to 2032, wiping out over a
+  # third of the track). The corrupt row differs wildly from BOTH neighbors,
+  # while those neighbors are consistent with each other, so it should be
+  # dropped as isolated corruption and every real row around it kept.
+  t0 <- as.POSIXct("2026-01-01 12:00:00", tz = "UTC")
+  good_times <- t0 + 0:19
+  df <- data.frame(
+    line_index = seq_len(21),
+    datetime_utc = c(good_times[1:10], as.POSIXct("2032-02-09 23:40:59", tz = "UTC"), good_times[11:20]),
+    latitude = c(seq(0, 0.001, length.out = 10), 99, seq(0.0011, 0.002, length.out = 10)),
+    longitude = 0
+  )
+
+  out <- drop_stale_rmc(df)
+
+  expect_equal(nrow(out), 20)
+  expect_true(all(out$latitude != 99))
+  expect_true(all(diff(as.numeric(out$datetime_utc)) >= 0))
+})
+
+test_that("drop_stale_rmc leaves a clean monotonic feed untouched", {
+  t0 <- as.POSIXct("2026-01-01 12:00:00", tz = "UTC")
+  df <- data.frame(line_index = 1:10, datetime_utc = t0 + 0:9, latitude = 0, longitude = 0)
+  expect_equal(drop_stale_rmc(df), df)
+})
+
+test_that("drop_stale_rmc tolerates small jitter within tol_sec", {
+  t0 <- as.POSIXct("2026-01-01 12:00:00", tz = "UTC")
+  # A 1-second backward blip (ordinary receiver jitter) should be kept.
+  df <- data.frame(line_index = 1:5, datetime_utc = t0 + c(0, 1, 2, 1, 4), latitude = 0, longitude = 0)
+  out <- drop_stale_rmc(df, tol_sec = 5)
+  expect_equal(nrow(out), 5)
+})

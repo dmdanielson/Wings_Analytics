@@ -2,6 +2,8 @@
 rebuild_rds_from_raw <- function() {
   raw_lines_init <- read_all_txt()
   rmc_init   <- parse_rmc_any(raw_lines_init)
+  rmc_init   <- drop_stale_rmc(rmc_init)
+  rmc_init   <- resolve_duplicate_rmc_fixes(rmc_init)
   boat_init  <- parse_boat_speed(raw_lines_init)
   wind_init  <- parse_wind_mwv(raw_lines_init)
   mwd_init   <- parse_mwd(raw_lines_init)
@@ -245,6 +247,11 @@ rebuild_rds_from_raw <- function() {
       )
     )
   
+  # ---------- GPS GLITCH FILTER ----------
+  # Drop erroneous fixes (duplicate-timestamp position jumps + isolated
+  # teleports) before tagging races and computing stats. See R/parsing.R.
+  track_all_init <- filter_gps_glitches(track_all_init)
+
   # ---------- APPLY RACE CALENDAR ----------
   track_all_init <- track_all_init %>%
     mutate(race = "", helm = "", headsail = "")

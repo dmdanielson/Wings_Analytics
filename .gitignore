@@ -11,3 +11,4 @@
 track_data.rds
 track_data_*.rds
 tests/testthat/_snaps/*.new.md
+raw_data/

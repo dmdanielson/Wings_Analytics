@@ -17,7 +17,8 @@ empty_rmc_tbl <- function() {
     latitude    = numeric(),
     longitude   = numeric(),
     sog_knots   = numeric(),
-    cog_deg     = numeric()
+    cog_deg     = numeric(),
+    mode_indicator = character()
   )
 }
 empty_boat_tbl <- function() {
@@ -50,7 +51,7 @@ parse_rmc_any <- function(lines) {
   
   rmc_lines <- lines[idxs]
   tibble(raw = rmc_lines, line_index = idxs) |>
-    separate(raw, into = paste0("field", 1:12), sep = ",", fill = "right") |>
+    separate(raw, into = paste0("field", 1:14), sep = ",", fill = "right", extra = "merge") |>
     transmute(
       line_index  = line_index,
       sentence    = field1,
@@ -62,7 +63,8 @@ parse_rmc_any <- function(lines) {
       lon_dir     = field7,
       sog_knots   = suppressWarnings(as.numeric(field8)),
       cog_deg     = suppressWarnings(as.numeric(field9)),
-      date_utc    = field10
+      date_utc    = field10,
+      mode_indicator = field13
     ) |>
     mutate(
       lat_raw_num   = suppressWarnings(as.numeric(lat_raw)),
@@ -81,7 +83,90 @@ parse_rmc_any <- function(lines) {
       ),
       datetime_utc  = suppressWarnings(ymd_hms(paste(date_fmt, time_fmt), tz = "UTC"))
     ) |>
-    select(line_index, datetime_utc, sentence, latitude, longitude, sog_knots, cog_deg)
+    select(line_index, datetime_utc, sentence, latitude, longitude, sog_knots, cog_deg, mode_indicator)
+}
+
+# Drop $..RMC fixes whose embedded UTC time jumps backward in file order by
+# more than a trivial amount. A single NMEA feed's timestamps should be
+# non-decreasing as the log is read top to bottom; investigation of the
+# 2026-09-06 session (which produced a "sawtooth" - a track that repeatedly
+# reverses between two lines on the map) found the raw log periodically
+# re-transmitted a ~236-second-old batch of already-logged fixes at a
+# materially different position (21 such bursts in one session), then caught
+# back up. Because the replayed fixes have their own distinct, non-duplicate
+# timestamps, resolve_duplicate_rmc_fixes()'s same-second dedup can't see
+# them, and since each replayed fix is only "fast" relative to one neighbor
+# (like the sawtooth case filter_gps_glitches() handles), the chord-based
+# excursion filter is blind to it too since the excursion spans minutes, not
+# the maneuver-length spans that filter operates over. This is a receiver-time
+# problem, not a geometry problem, so it is corrected here at the source:
+# any fix whose time is more than tol_sec seconds behind the maximum time
+# already seen is dropped as stale/replayed data. A scan of every raw session
+# on file found genuine backward jitter is essentially zero (the smallest
+# spurious jump found was ~9 minutes) while corrupt or replayed timestamps
+# jump backward by minutes to years, so tol_sec has wide margin.
+#
+# A running maximum is vulnerable to a single corrupt sentence poisoning it:
+# across the full multi-season dataset, one garbled RMC line parsed to a date
+# in 2032, which then made every genuine fix for the rest of the file look
+# "behind" and wiped out over a third of the track. Stage 1 below removes
+# such isolated single-fix time corruption first - mirroring
+# filter_gps_glitches()'s isolated-teleport check, but on the time field: a
+# fix is dropped only when it differs wildly from BOTH neighbors while those
+# neighbors are consistent with each other (i.e. removing it restores a
+# smooth sequence), so a real gap between sessions (where neighbors are NOT
+# close to each other) is left untouched. Stage 2 is the running-max burst
+# filter described above, now safe to run on the cleaned sequence.
+drop_stale_rmc <- function(df, tol_sec = 5, isolated_thr = 3600) {
+  if (nrow(df) < 3 || !"datetime_utc" %in% names(df)) return(df)
+  t <- as.numeric(df$datetime_utc)
+
+  n <- length(t)
+  prev_t <- c(NA_real_, t[-n])
+  next_t <- c(t[-1], NA_real_)
+  isolated <- !is.na(t) & !is.na(prev_t) & !is.na(next_t) &
+    abs(t - prev_t) > isolated_thr &
+    abs(next_t - t) > isolated_thr &
+    abs(next_t - prev_t) <= isolated_thr
+  df <- df[!isolated, , drop = FALSE]
+  t <- t[!isolated]
+
+  running_max <- -Inf
+  keep <- rep(TRUE, length(t))
+  for (i in seq_along(t)) {
+    if (is.na(t[i])) next
+    if (t[i] < running_max - tol_sec) {
+      keep[i] <- FALSE
+    } else {
+      running_max <- max(running_max, t[i])
+    }
+  }
+  df[keep, , drop = FALSE]
+}
+
+# Resolve $..RMC fixes that share the same UTC second. Some sessions carry two
+# independent GPS-capable talkers on the NMEA bus at once (e.g. two instruments
+# both emitting RMC), each producing a fix for the same second at a materially
+# different position. Left alone, the duplicate-timestamp trajectory-consistency
+# check in filter_gps_glitches() has to guess from geometry alone and can lock
+# onto the wrong stream for extended stretches whenever the preferred stream has
+# a brief dropout, producing a persistent sawtooth in the track. Ranking by the
+# RMC mode indicator (field 13: fix quality) resolves same-second collisions
+# deterministically before any geometry is considered. Rows with an unranked or
+# missing mode indicator (older, shorter RMC sentences without this field) are
+# treated as lowest priority, so genuine single-source data is untouched and any
+# remaining ambiguity still falls through to filter_gps_glitches()'s
+# geometry-based tie-break.
+resolve_duplicate_rmc_fixes <- function(df) {
+  if (!"mode_indicator" %in% names(df) || nrow(df) < 2) return(df)
+  mode_rank <- c(R = 1L, F = 2L, D = 3L, A = 4L, E = 5L, M = 6L, S = 7L, N = 8L)
+  df$.mode_rank <- ifelse(df$mode_indicator %in% names(mode_rank),
+                           mode_rank[df$mode_indicator], 9L)
+  df <- df[order(df$datetime_utc, df$.mode_rank, df$line_index), , drop = FALSE]
+  df <- df[!duplicated(df$datetime_utc), , drop = FALSE]
+  df <- df[order(df$line_index), , drop = FALSE]
+  df$.mode_rank <- NULL
+  df
 }
 
 parse_boat_speed <- function(lines) {
@@ -159,7 +244,13 @@ parse_mwd <- function(lines) {
 }
 
 read_all_txt <- function(dir = data_dir) {
-  files <- list.files(dir, pattern = "\\.txt$", full.names = TRUE)
+  # Restrict to the VDR/OpenCPN raw-log naming convention (vdr_<timestamp>.txt)
+  # rather than every *.txt file. The data directory can accumulate unrelated
+  # notes/scratch .txt files over time (e.g. a stray "app.txt" was found
+  # alongside the logs); matching those would feed non-NMEA text into the
+  # parsers for no benefit and can trip file-access restrictions in sandboxed
+  # environments for files outside the expected log set.
+  files <- list.files(dir, pattern = "^vdr_.*\\.txt$", full.names = TRUE)
   if (!length(files)) return(character())
   unlist(lapply(files, readr::read_lines))
 }
@@ -225,4 +316,93 @@ normalize_excel_names <- function(nms) {
   nms <- tolower(gsub("\\s+", "_", nms))
   nms <- gsub("[^a-z0-9_]+", "", nms)
   nms
+}
+
+# Remove erroneous GPS fixes from a track data frame. Three error classes:
+#   1. Duplicate timestamps - the same instant carrying two or more fixes at
+#      very different positions (physically impossible, one is spurious). The
+#      fix kept is the one minimizing total distance to the nearest distinct-
+#      time neighbors, i.e. the position most consistent with the trajectory.
+#   2. Isolated teleports - a single fix implying an impossible speed to BOTH
+#      temporal neighbors. The threshold is SOG-aware, pmax(cap_abs, div * SOG),
+#      so genuine fast sailing is preserved while position jumps are dropped.
+#   3. Off-trajectory excursions - short RUNS of fixes that depart from and
+#      return to the true track (a GPS "sawtooth": the reported position jumps
+#      off-line, holds for several fixes, then snaps back). These evade class 2,
+#      which only compares a fix to its two immediate neighbors, so a multi-fix
+#      block never looks fast on both sides. Instead we measure each fix's
+#      cross-track distance from the chord joining the fixes chord_k steps
+#      before and after it; brief excursions (bounded by a chord_maxgap-second
+#      span, so day/leg boundaries are never chorded) lying farther than
+#      chord_thr metres off that chord are dropped, iterated over chord_passes
+#      so wide teeth peel away and the chord re-anchors on clean fixes.
+# Requires columns: datetime_local, latitude, longitude, sog_knots.
+filter_gps_glitches <- function(df, cap_abs = 20, div = 4, max_passes = 3,
+                                chord_k = 15, chord_thr = 60, chord_maxgap = 120,
+                                chord_passes = 6) {
+  if (nrow(df) < 3) return(df)
+  df <- df[order(df$datetime_local), , drop = FALSE]
+  df <- df[!duplicated(df[c("datetime_local", "latitude", "longitude")]), , drop = FALSE]
+
+  # (1) resolve duplicate timestamps by trajectory consistency
+  ts <- as.numeric(df$datetime_local)
+  dup_vals <- unique(ts[duplicated(ts)])
+  if (length(dup_vals)) {
+    keep <- rep(TRUE, nrow(df))
+    for (tv in dup_vals) {
+      grp <- which(ts == tv & keep)
+      if (length(grp) < 2) next
+      b_i <- suppressWarnings(max(which(ts < tv & keep)))
+      a_i <- suppressWarnings(min(which(ts > tv & keep)))
+      refs <- rbind(
+        if (is.finite(b_i)) c(df$longitude[b_i], df$latitude[b_i]) else NULL,
+        if (is.finite(a_i)) c(df$longitude[a_i], df$latitude[a_i]) else NULL
+      )
+      if (is.null(refs)) { keep[grp[-1]] <- FALSE; next }
+      score <- vapply(grp, function(i)
+        sum(geosphere::distHaversine(cbind(df$longitude[i], df$latitude[i]), refs)),
+        numeric(1))
+      keep[setdiff(grp, grp[which.min(score)])] <- FALSE
+    }
+    df <- df[keep, , drop = FALSE]
+  }
+
+  # (2) iterative isolated-teleport removal (SOG-aware, both neighbors)
+  for (pass in seq_len(max_passes)) {
+    if (nrow(df) < 3) break
+    lon <- df$longitude; lat <- df$latitude; tt <- as.numeric(df$datetime_local)
+    ip  <- geosphere::distHaversine(cbind(dplyr::lag(lon), dplyr::lag(lat)),
+                                    cbind(lon, lat)) / pmax(tt - dplyr::lag(tt), 1) * 1.94384
+    inx <- geosphere::distHaversine(cbind(lon, lat),
+                                    cbind(dplyr::lead(lon), dplyr::lead(lat))) / pmax(dplyr::lead(tt) - tt, 1) * 1.94384
+    thr <- pmax(cap_abs, div * ifelse(is.na(df$sog_knots), 0, df$sog_knots))
+    g <- !is.na(ip) & !is.na(inx) & ip > thr & inx > thr
+    if (!any(g)) break
+    df <- df[!g, , drop = FALSE]
+  }
+
+  # (3) iterative off-trajectory excursion removal (chord cross-track test).
+  # For each fix, form the great-circle chord between the fixes chord_k steps
+  # before and after it and measure the fix's perpendicular distance from that
+  # chord. A brief excursion block sits far off the chord that straddles it,
+  # while smooth sailing (and even tacks/roundings) hugs it. Only spans no
+  # longer than chord_maxgap seconds are chorded, so gaps between days or legs
+  # are never bridged. Removing the worst offenders each pass lets wide teeth
+  # peel away as the chord re-anchors on clean fixes.
+  for (pass in seq_len(chord_passes)) {
+    n <- nrow(df)
+    if (n < 2L * chord_k + 1L) break
+    ai <- pmax(1L, seq_len(n) - chord_k)
+    bi <- pmin(n,  seq_len(n) + chord_k)
+    tt <- as.numeric(df$datetime_local)
+    span <- tt[bi] - tt[ai]
+    dev <- abs(geosphere::dist2gc(
+      cbind(df$longitude[ai], df$latitude[ai]),
+      cbind(df$longitude[bi], df$latitude[bi]),
+      cbind(df$longitude,     df$latitude)))
+    g <- !is.na(dev) & dev > chord_thr & !is.na(span) & span <= chord_maxgap
+    if (!any(g)) break
+    df <- df[!g, , drop = FALSE]
+  }
+  df
 }

@@ -120,36 +120,16 @@ track_all_loaded <- track_all_loaded |>
   ) %>%
   filter(is.na(sog_knots) | sog_knots <= 15)
 
-# ---------- TELEPORT DETECTION ----------
-# Remove isolated GPS anomalies caused by UTC date-rollover bugs in NMEA
-# sentences. These "teleport" points appear when a stray RMC sentence carries
-# the wrong UTC date, causing its computed position to jump thousands of miles
-# from its true temporal neighbors. The detection algorithm computes implied
-# speed (via Haversine distance / time delta) to both the preceding and
-# following points. If a point implies speeds exceeding 30 knots to BOTH
-# neighbors, it is a spurious jump (real sailing never exceeds ~15 knots on
-# this boat) and is dropped. Points at the start/end of the dataset (where
-# lag/lead produces NA) are always retained.
-track_all_loaded <- track_all_loaded |>
-  arrange(datetime_local) |>
-  mutate(
-    tele_dist_prev_m = geosphere::distHaversine(
-      cbind(dplyr::lag(longitude), dplyr::lag(latitude)),
-      cbind(longitude, latitude)
-    ),
-    tele_dist_next_m = geosphere::distHaversine(
-      cbind(longitude, latitude),
-      cbind(dplyr::lead(longitude), dplyr::lead(latitude))
-    ),
-    tele_dt_prev_s = as.numeric(datetime_local - dplyr::lag(datetime_local), units = "secs"),
-    tele_dt_next_s = as.numeric(dplyr::lead(datetime_local) - datetime_local, units = "secs"),
-    tele_spd_prev_kn = (tele_dist_prev_m / pmax(tele_dt_prev_s, 1)) * 1.94384,
-    tele_spd_next_kn = (tele_dist_next_m / pmax(tele_dt_next_s, 1)) * 1.94384
-  ) |>
-  filter(is.na(tele_spd_prev_kn) | is.na(tele_spd_next_kn) |
-         tele_spd_prev_kn <= 30 | tele_spd_next_kn <= 30) |>
-  select(-tele_dist_prev_m, -tele_dist_next_m, -tele_dt_prev_s, -tele_dt_next_s,
-         -tele_spd_prev_kn, -tele_spd_next_kn)
+# ---------- GPS GLITCH FILTER ----------
+# Remove erroneous GPS fixes before deriving any UI columns or stats:
+#   (1) duplicate-timestamp fixes where the same instant carries two very
+#       different positions (one is spurious), resolved by keeping the fix most
+#       consistent with its temporal neighbors; and
+#   (2) isolated "teleport" spikes implying impossible speeds (SOG-aware
+#       threshold) to both neighbors.
+# Applied at startup as a safety net so RDS files built before this rule are
+# still cleaned. See filter_gps_glitches() in R/parsing.R.
+track_all_loaded <- filter_gps_glitches(track_all_loaded)
 
 # Pre-compute UI display columns once at startup. These derived columns are
 # used repeatedly in reactive expressions and renderers. Computing them once
@@ -1490,7 +1470,7 @@ server <- function(input, output, session) {
   # exists before allowing downstream reactives to proceed.
   track_all <- reactive({
     df <- data_rds$track_all
-    validate(need(nrow(df) > 0, "No track data in RDS file."))
+    shiny::validate(shiny::need(nrow(df) > 0, "No track data in RDS file."))
     df
   })
 
@@ -2036,7 +2016,7 @@ server <- function(input, output, session) {
     }
     has_marks <- !is.null(marks_pts) && nrow(marks_pts) > 0
 
-    validate(need(has_track || has_marks,
+    shiny::validate(shiny::need(has_track || has_marks,
                   "No track or course data to display for selected filters."))
 
     m <- leaflet() |> addTiles()
@@ -2132,7 +2112,7 @@ server <- function(input, output, session) {
   # navigates back to a previously viewed race.
   output$plot_boat_speed <- renderPlot({
     df <- track()
-    validate(need(nrow(df) > 0, "No data to plot for selected filters."))
+    shiny::validate(shiny::need(nrow(df) > 0, "No data to plot for selected filters."))
 
     raw_long <- df %>%
       select(datetime_local, day_local_ui, sog_knots, stw_knots) %>%
