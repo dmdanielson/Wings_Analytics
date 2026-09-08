@@ -9,8 +9,5 @@
 /.quarto/
 **/*.quarto_ipynb
 track_data.rds
-track_data_reference.rds
-track_data_reference.rds
-track_data_rebuilt.rds
-tests/testthat/_snaps/*.new.md
+track_data_*.rds
 tests/testthat/_snaps/*.new.md
