@@ -717,7 +717,7 @@ generate_season_narrative <- function(season_name, season_cal, track_data) {
   }
 
   n_races <- season_cal |>
-    mutate(race_date = as.Date(start)) |>
+    mutate(race_date = as.Date(start, tz = LOCAL_TZ)) |>
     distinct(race, race_date) |>
     nrow()
 
@@ -951,7 +951,7 @@ generate_performance_narrative <- function(race_calendar, track_data) {
   seasons <- sort(unique(race_calendar$season[!is.na(race_calendar$season)]))
   n_seasons <- length(seasons)
   n_total_races <- race_calendar |>
-    mutate(race_date = as.Date(start)) |>
+    mutate(race_date = as.Date(start, tz = LOCAL_TZ)) |>
     distinct(race, race_date) |>
     nrow()
   total_nm <- sum(race_calendar$length, na.rm = TRUE)
@@ -1189,7 +1189,7 @@ build_all_narratives <- function(data_rds) {
 
   # Build per-race stats using the calendar's start/end to filter track data.
   cal_rows <- cal |>
-    mutate(race_date = as.Date(start)) |>
+    mutate(race_date = as.Date(start, tz = LOCAL_TZ)) |>
     group_by(race, race_date) |>
     summarise(
       season   = first(season),

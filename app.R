@@ -3,8 +3,7 @@
 #
 # A single-file R Shiny application that transforms raw NMEA GPS/instrument data
 # from a J112e sailboat ("Wings") into interactive dashboards with maps, speed
-# analysis, polar performance benchmarking, and AI-generated race narratives.
-#
+# analysis, polar performance benchmarking, and AI-generated race narratives#
 # Architecture:
 #   The app follows a two-phase pipeline design:
 #   1. REBUILD PHASE (local only): Raw NMEA .txt files + Race Calendar.xlsx +
@@ -57,14 +56,20 @@ app_dir_local  <- "C:/Users/mike/Projects/Wings_Analytics"
 data_dir_local <- "G:/My Drive/Personal/Mike/Sailing/Data"
 
 app_dir  <- if (dir.exists(app_dir_local)) app_dir_local else getwd()
-data_dir <- if (dir.exists(data_dir_local)) data_dir_local else app_dir
+data_dir <- if (dir.exists(data_dir_local)) {
+  data_dir_local
+} else if (dir.exists(file.path(app_dir, "raw_data"))) {
+  file.path(app_dir, "raw_data")
+} else {
+  app_dir
+}
 
 # Only setwd when local path exists; never needed on shinyapps
 if (dir.exists(app_dir_local)) setwd(app_dir_local)
 
-source("R/narratives.R")
-source("R/parsing.R")
-source("R/build_rds.R")
+source("R/narratives.R", local = TRUE)
+source("R/parsing.R", local = TRUE)
+source("R/build_rds.R", local = TRUE)
 
 rds_path           <- file.path(app_dir, "track_data.rds")
 narratives_path    <- file.path(app_dir, "race_narratives.rds")
@@ -108,7 +113,7 @@ track_all_loaded <- track_all_loaded |>
   mutate(
     datetime_utc   = lubridate::force_tz(as.POSIXct(datetime_utc), "UTC"),
     datetime_local = with_tz(datetime_utc, LOCAL_TZ),
-    day_local      = as.Date(datetime_local),
+    day_local      = as.Date(datetime_local, tz = LOCAL_TZ),
     race     = if ("race"     %in% names(track_all_loaded)) as.character(race) else "",
     helm     = if ("helm"     %in% names(track_all_loaded)) as.character(helm) else "",
     headsail = if ("headsail" %in% names(track_all_loaded)) as.character(headsail) else ""
@@ -186,7 +191,7 @@ ra_default_season <- if (nrow(ra_most_recent) > 0 && !is.na(ra_most_recent$seaso
 ra_default_season_cal <- data_rds$race_calendar |> filter(!is.na(season), season == ra_default_season)
 ra_default_series_choices <- c("All", sort(unique(ra_default_season_cal$series[!is.na(ra_default_season_cal$series) & nzchar(ra_default_season_cal$series)])))
 ra_default_race_list <- ra_default_season_cal |>
-  mutate(race_date = as.Date(start)) |>
+  mutate(race_date = as.Date(start, tz = LOCAL_TZ)) |>
   group_by(race, race_date) |>
   summarise(start = min(start, na.rm = TRUE), .groups = "drop") |>
   arrange(desc(start))
@@ -208,6 +213,51 @@ ui <- fluidPage(
     tags$meta(property = "og:url", content = "https://dmdanielson.shinyapps.io/Wings_Analytics/"),
     tags$meta(name = "twitter:card", content = "summary_large_image"),
     tags$style(HTML("
+      /* ===== Race Analytics: Course table dividers ===== */
+      #race_course_table th.course-divider-left,
+      #race_course_table td.course-divider-left {
+        border-left: 1px solid rgba(255,255,255,0.30);
+      }
+      #race_course_table th.course-divider-right,
+      #race_course_table td.course-divider-right {
+        border-right: 1px solid rgba(255,255,255,0.30);
+      }
+      #race_course_table tr.course-total-row td {
+        border-top: 1px solid rgba(255,255,255,0.30);
+      }
+      /* Compact rows: no wrapping, tight padding/line-height, and collapsed
+         cell borders so there's no visible gap between rows. */
+      #race_course_table table.dataTable {
+        border-collapse: collapse;
+      }
+      #race_course_table table.dataTable td,
+      #race_course_table table.dataTable th {
+        white-space: nowrap;
+        padding: 3px 6px !important;
+        line-height: 1.1;
+        font-size: 12px;
+      }
+      /* The two-row header mixes rowspan=2 cells (single columns) with
+         colspan group cells (row 1) + their sub-labels (row 2). Browsers
+         default table-header vertical-align to middle, which centers the
+         rowspan=2 cells across both rows instead of lining their text up
+         with row 2's sub-labels (and the data row right below). Bottom-
+         aligning every header cell puts all header text on a shared
+         baseline, flush with the top of the data. */
+      #race_course_table table.dataTable thead th {
+        vertical-align: bottom;
+      }
+      /* table-layout: fixed alone would size columns off the *first*
+         header row only, which mixes colspan group cells (no individual
+         widths) with the rowspan=2 cells -- leaving the group sub-labels
+         (row 2) and the body columns misaligned with the group headers
+         above them. Pairing it with an explicit <colgroup> (added in the
+         header_sketch below) gives every column a fixed pixel width that
+         both header rows and the body must honor. */
+      #race_course_table table.dataTable {
+        table-layout: fixed !important;
+      }
+
       /* ===== Global app look (performance / tech) ===== */
       body {
         background: #0b0f17;
@@ -345,6 +395,20 @@ ui <- fluidPage(
       #season_table table.dataTable {
         table-layout: fixed !important;
         width: 100% !important;
+        border-collapse: collapse;
+      }
+      /* Compact rows: no extra vertical margin/padding, matching the
+         Course table in Race Analytics. */
+      #season_summary_table table.dataTable td,
+      #season_summary_table table.dataTable th,
+      #season_series_summary_table table.dataTable td,
+      #season_series_summary_table table.dataTable th,
+      #season_table table.dataTable td,
+      #season_table table.dataTable th {
+        padding: 3px 6px !important;
+        line-height: 1.1;
+        font-size: 12px;
+        white-space: nowrap;
       }
       /* Allow Race column text to wrap in the detail table */
       #season_table table.dataTable td:nth-child(2) {
@@ -679,7 +743,7 @@ a.social-yt-link:hover {
         tabPanel("Course", br(),
           DTOutput("race_course_table"),
           br(),
-          leafletOutput("map", height = 450)
+          leafletOutput("map", height = 900)
         ),
         tabPanel("Crew", br(), DTOutput("race_crew_table"))
       )
@@ -973,7 +1037,7 @@ server <- function(input, output, session) {
     }
 
     cal |>
-      mutate(race_date = as.Date(start)) |>
+      mutate(race_date = as.Date(start, tz = LOCAL_TZ)) |>
       group_by(race, race_date) |>
       summarise(
         series      = first(series),
@@ -1196,7 +1260,12 @@ server <- function(input, output, session) {
       summary_df,
       options = list(dom = "t", ordering = FALSE, scrollX = TRUE),
       rownames = FALSE
-    )
+    ) |>
+      formatRound(
+        columns = c("Distance (nm)", "Avg STW", "Avg SOG", "Max STW", "Max SOG",
+                    "Avg TWS", "Max TWS", "STW Polar Perf", "SOG Polar Perf"),
+        digits = 1
+      )
   })
   
   # ---- Course table for Race Analytics tab ----
@@ -1204,65 +1273,28 @@ server <- function(input, output, session) {
     cal_row <- ra_selected_row()
     req(cal_row)
 
-    marks_ref <- data_rds$marks_ref
+    # Mark identities/positions and each mark's closest-approach time/leg
+    # window come from the shared ra_mark_roundings() reactive (also used by
+    # the boat speed plot), so both stay in sync on the same rounding logic.
+    course_df <- ra_mark_roundings()
 
-    # Collect course columns in order: start_line, mark_1..N, finish_line
-    course_cols <- grep("^(start_line|mark_\\d+|finish_line)$", names(cal_row), value = TRUE)
-    # Sort: start_line first, then mark_N numerically, then finish_line
-    mark_nums <- suppressWarnings(as.integer(gsub("mark_", "", course_cols)))
-    col_order <- order(
-      ifelse(course_cols == "start_line", -1, ifelse(course_cols == "finish_line", Inf, mark_nums))
-    )
-    course_cols <- course_cols[col_order]
+    # Distance/offshore races (e.g. "81 Bay Regatta") have no charted marks
+    # in the Race Calendar, so ra_mark_roundings() returns zero rows. There's
+    # no leg-by-leg course to show for those, and building a table without
+    # any BTW/SOG/etc. columns would break the divider-column lookup below
+    # (match() against columns that were never added, feeding NA targets
+    # into DT) -- so show a clear message instead of a mostly-empty table.
+    shiny::validate(shiny::need(
+      nrow(course_df) > 0,
+      "No course marks defined for this race (likely a distance/offshore race without charted marks)."
+    ))
+    {
+      lat_num <- course_df$lat_dd
+      lon_num <- course_df$lon_dd
 
-    # Build display labels
-    col_labels <- dplyr::case_when(
-      course_cols == "start_line"  ~ "Start Line",
-      course_cols == "finish_line" ~ "Finish Line",
-      TRUE ~ paste("Mark", gsub("mark_", "", course_cols))
-    )
-
-    # Extract mark values, keep only non-NA rows
-    mark_values <- vapply(course_cols, function(cc) as.character(cal_row[[cc]]), character(1))
-    keep <- !is.na(mark_values)
-
-    if (!any(keep)) {
-      course_df <- tibble(`#` = integer(), Leg = character(), Mark = character(),
-                          Latitude = character(), Longitude = character())
-    } else {
-      course_df <- tibble(
-        `#`  = seq_len(sum(keep)),
-        Leg  = col_labels[keep],
-        Mark = mark_values[keep]
-      )
-
-      # Join lat/lon from marks reference
-      if (!is.null(marks_ref) && nrow(marks_ref) > 0) {
-        course_df <- course_df |>
-          left_join(marks_ref, by = c("Mark" = "mark")) |>
-          rename(Latitude = lat, Longitude = lon)
-      } else {
-        course_df$Latitude  <- NA_character_
-        course_df$Longitude <- NA_character_
-      }
-
-      # Marks are stored as degrees-decimal-minutes strings (e.g. "27° 54.22").
-      # Convert to decimal degrees for distance math.
-      dm_to_dd <- function(x) {
-        m <- regmatches(x, regexec("(-?[0-9]+)[^0-9]+([0-9.]+)", x))
-        vapply(m, function(p) {
-          if (length(p) < 3) return(NA_real_)
-          d <- suppressWarnings(as.numeric(p[2]))
-          mm <- suppressWarnings(as.numeric(p[3]))
-          if (is.na(d) || is.na(mm)) return(NA_real_)
-          sign(d) * (abs(d) + mm / 60)
-        }, numeric(1))
-      }
-
-      # Distance (nm) of each leg from the previous mark, via haversine.
-      # Tampa Bay: latitude North (+), longitude West (-).
-      lat_num <-  abs(dm_to_dd(course_df$Latitude))
-      lon_num <- -abs(dm_to_dd(course_df$Longitude))
+      # Rhumb-line distance (nm) of each leg from the previous mark, via
+      # haversine on the mark coordinates. Tampa Bay: latitude North (+),
+      # longitude West (-).
       dist_nm <- rep(NA_real_, nrow(course_df))
       if (nrow(course_df) > 1) {
         for (i in 2:nrow(course_df)) {
@@ -1275,7 +1307,7 @@ server <- function(input, output, session) {
           }
         }
       }
-      course_df$`Distance (nm)` <- round(dist_nm, 2)
+      course_df$Rhumb <- round(dist_nm, 2)
 
       # Bearing (BTW) from the previous mark to this mark, as a compass heading.
       btw_col <- rep(NA_real_, nrow(course_df))
@@ -1290,13 +1322,11 @@ server <- function(input, output, session) {
           }
         }
       }
-      course_df$`BTW (°)` <- round(btw_col, 0)
+      course_df$BTW <- round(btw_col, 0)
 
       # True wind at each mark, taken from the NMEA fixes nearest the mark in
-      # both space and time. A mark can be passed more than once, so we walk the
-      # marks in leg order and only search fixes at or after the previous mark's
-      # rounding time. This monotonic-time constraint assigns each rounding to
-      # the correct leg instead of collapsing repeats onto one pass.
+      # both space and time, using the [leg_start, Time] window that
+      # ra_mark_roundings() already resolved for each leg.
       #
       # TWD: prefer the H5000's calculated true wind direction (twd_deg, from the
       # MWD sentence) when present -- it is fully calibrated and needs no COG
@@ -1307,11 +1337,23 @@ server <- function(input, output, session) {
       # as-is. TWS is the mean fix true-wind speed; the derived-TWD fallback is
       # gated on mean SOG since COG (the heading proxy) is unreliable at low speed.
       MIN_SOG_FOR_TWD <- 2  # knots
-      tws_col <- rep(NA_real_, nrow(course_df))
-      twd_col <- rep(NA_real_, nrow(course_df))
+      tws_col    <- rep(NA_real_, nrow(course_df))
+      twd_col    <- rep(NA_real_, nrow(course_df))
       # Per-leg STW polar performance: mean of the per-fix observed-minus-target
       # speed delta over the fixes sailed on that leg (prior mark -> this mark).
-      polar_col <- rep(NA_real_, nrow(course_df))
+      polar_col  <- rep(NA_real_, nrow(course_df))
+      # Per-leg mean target (reference-polar) STW, backed out from the per-fix
+      # observed STW and its polar-perf delta (stw_knots - Polar_Perf_STW).
+      # Used below to derive PolPerfTm, the time-based polar performance.
+      target_stw_col <- rep(NA_real_, nrow(course_df))
+      # Sailed distance (nm): the actual path length covered on this leg, i.e.
+      # the sum of consecutive-fix haversine distances -- as opposed to the
+      # straight-line Rhumb Dist between the two marks.
+      sailed_col <- rep(NA_real_, nrow(course_df))
+      # Per-leg average SOG/STW, over the same fixes used for Sailed.
+      sog_col <- rep(NA_real_, nrow(course_df))
+      stw_col <- rep(NA_real_, nrow(course_df))
+
       df_track <- tryCatch(track(), error = function(e) NULL)
       wind_cols <- c("latitude", "longitude", "datetime_local",
                      "tws_knots", "twa_deg", "cog_deg", "sog_knots")
@@ -1320,86 +1362,207 @@ server <- function(input, output, session) {
         trk <- df_track |>
           filter(!is.na(latitude), !is.na(longitude), !is.na(datetime_local)) |>
           arrange(datetime_local)
-        if (nrow(trk) > 0) {
-          prev_time <- min(trk$datetime_local, na.rm = TRUE)
-          for (i in seq_len(nrow(course_df))) {
-            if (is.na(lat_num[i]) || is.na(lon_num[i])) next
-            leg_start <- prev_time
-            cand <- trk |> filter(datetime_local >= prev_time)
-            if (nrow(cand) == 0) next
-            d <- geosphere::distHaversine(
-              cbind(cand$longitude, cand$latitude),
-              c(lon_num[i], lat_num[i])
+        for (i in seq_len(nrow(course_df))) {
+          leg_start <- course_df$leg_start[i]
+          t_round   <- course_df$Time[i]
+          if (is.na(leg_start) || is.na(t_round)) next
+
+          leg_track <- trk |> filter(datetime_local > leg_start, datetime_local <= t_round)
+
+          if (nrow(leg_track) > 1) {
+            seg_d <- geosphere::distHaversine(
+              cbind(leg_track$longitude[-nrow(leg_track)], leg_track$latitude[-nrow(leg_track)]),
+              cbind(leg_track$longitude[-1],               leg_track$latitude[-1])
             )
-            j <- which.min(d)
-            t_round <- cand$datetime_local[j]
-            prev_time <- t_round
+            sailed_col[i] <- sum(seg_d, na.rm = TRUE) / 1852
+          }
 
-            # Mean STW polar performance over the leg just sailed.
-            if ("Polar_Perf_STW" %in% names(trk)) {
-              leg_track <- trk |>
-                filter(datetime_local > leg_start, datetime_local <= t_round)
-              pv <- leg_track$Polar_Perf_STW[!is.na(leg_track$Polar_Perf_STW)]
-              if (length(pv) > 0) polar_col[i] <- mean(pv)
-            }
-            win <- cand |>
-              filter(abs(as.numeric(
-                difftime(datetime_local, t_round, units = "secs"))) <= 30) |>
-              filter(!is.na(tws_knots), !is.na(twa_deg),
-                     !is.na(cog_deg), !is.na(sog_knots))
-            if (nrow(win) == 0) next
+          if ("sog_knots" %in% names(leg_track)) {
+            sv <- leg_track$sog_knots[!is.na(leg_track$sog_knots)]
+            if (length(sv) > 0) sog_col[i] <- mean(sv)
+          }
+          if ("stw_knots" %in% names(leg_track)) {
+            sv <- leg_track$stw_knots[!is.na(leg_track$stw_knots)]
+            if (length(sv) > 0) stw_col[i] <- mean(sv)
+          }
 
-            # Per-fix true-wind vector in the compass frame (x = East, y = North).
-            wt <- if ("wind_type" %in% names(win))
-              as.character(win$wind_type) else rep(NA_character_, nrow(win))
-            already_true <- !is.na(wt) & wt == "True"
-            # Measured wind as a "blowing-toward" vector: it blows FROM
-            # (COG + TWA), i.e. toward that bearing + 180.
-            to_rad  <- (((win$cog_deg + win$twa_deg) + 180) %% 360) * pi / 180
-            mx <- win$tws_knots * sin(to_rad)
-            my <- win$tws_knots * cos(to_rad)
-            # Boat velocity over ground, added only for apparent fixes.
-            cog_rad <- win$cog_deg * pi / 180
-            bx <- ifelse(already_true, 0, win$sog_knots * sin(cog_rad))
-            by <- ifelse(already_true, 0, win$sog_knots * cos(cog_rad))
-            tx <- mx + bx
-            ty <- my + by
+          # Mean STW polar performance over the leg just sailed.
+          if ("Polar_Perf_STW" %in% names(leg_track)) {
+            pv <- leg_track$Polar_Perf_STW[!is.na(leg_track$Polar_Perf_STW)]
+            if (length(pv) > 0) polar_col[i] <- mean(pv)
+          }
 
-            tws_col[i] <- mean(sqrt(tx^2 + ty^2), na.rm = TRUE)
+          # Mean target (reference-polar) STW over the leg, from fixes with
+          # both an observed STW and a polar-perf delta.
+          if (all(c("stw_knots", "Polar_Perf_STW") %in% names(leg_track))) {
+            tgt <- leg_track$stw_knots - leg_track$Polar_Perf_STW
+            tgt <- tgt[!is.na(tgt)]
+            if (length(tgt) > 0) target_stw_col[i] <- mean(tgt)
+          }
 
-            # Prefer the H5000's calculated TWD (MWD) if present in the window.
-            twd_win <- if ("twd_deg" %in% names(win))
-              win$twd_deg[!is.na(win$twd_deg)] else numeric(0)
-            sog_win <- mean(win$sog_knots, na.rm = TRUE)
-            if (length(twd_win) > 0) {
-              twd_col[i] <- (atan2(mean(sin(twd_win * pi / 180)),
-                                   mean(cos(twd_win * pi / 180))) * 180 / pi) %% 360
-            } else if (!is.na(sog_win) && sog_win >= MIN_SOG_FOR_TWD) {
-              # Fallback: derived TWD (FROM) = bearing of mean wind vector + 180.
-              twd_col[i] <- (atan2(mean(tx, na.rm = TRUE),
-                                   mean(ty, na.rm = TRUE)) * 180 / pi + 180) %% 360
-            }
+          win <- trk |>
+            filter(abs(as.numeric(
+              difftime(datetime_local, t_round, units = "secs"))) <= 30) |>
+            filter(!is.na(tws_knots), !is.na(twa_deg),
+                   !is.na(cog_deg), !is.na(sog_knots))
+          if (nrow(win) == 0) next
+
+          # Per-fix true-wind vector in the compass frame (x = East, y = North).
+          wt <- if ("wind_type" %in% names(win))
+            as.character(win$wind_type) else rep(NA_character_, nrow(win))
+          already_true <- !is.na(wt) & wt == "True"
+          # Measured wind as a "blowing-toward" vector: it blows FROM
+          # (COG + TWA), i.e. toward that bearing + 180.
+          to_rad  <- (((win$cog_deg + win$twa_deg) + 180) %% 360) * pi / 180
+          mx <- win$tws_knots * sin(to_rad)
+          my <- win$tws_knots * cos(to_rad)
+          # Boat velocity over ground, added only for apparent fixes.
+          cog_rad <- win$cog_deg * pi / 180
+          bx <- ifelse(already_true, 0, win$sog_knots * sin(cog_rad))
+          by <- ifelse(already_true, 0, win$sog_knots * cos(cog_rad))
+          tx <- mx + bx
+          ty <- my + by
+
+          tws_col[i] <- mean(sqrt(tx^2 + ty^2), na.rm = TRUE)
+
+          # Prefer the H5000's calculated TWD (MWD) if present in the window.
+          twd_win <- if ("twd_deg" %in% names(win))
+            win$twd_deg[!is.na(win$twd_deg)] else numeric(0)
+          sog_win <- mean(win$sog_knots, na.rm = TRUE)
+          if (length(twd_win) > 0) {
+            twd_col[i] <- (atan2(mean(sin(twd_win * pi / 180)),
+                                 mean(cos(twd_win * pi / 180))) * 180 / pi) %% 360
+          } else if (!is.na(sog_win) && sog_win >= MIN_SOG_FOR_TWD) {
+            # Fallback: derived TWD (FROM) = bearing of mean wind vector + 180.
+            twd_col[i] <- (atan2(mean(tx, na.rm = TRUE),
+                                 mean(ty, na.rm = TRUE)) * 180 / pi + 180) %% 360
           }
         }
       }
-      course_df$`TWS (kt)` <- round(tws_col, 1)
-      course_df$`TWD (°)` <- round(twd_col, 0)
-      course_df$`Polar Perf` <- round(polar_col, 2)
+      # The first real mark (Start Line) has no previous mark in the list, so
+      # there is no "leg" to attribute a sailed distance, polar performance,
+      # or average speed to -- zero/NA them out rather than counting
+      # pre-start maneuvering.
+      sailed_col[1] <- 0
+      polar_col[1]  <- NA_real_
+      sog_col[1]    <- NA_real_
+      stw_col[1]    <- NA_real_
+      target_stw_col[1] <- NA_real_
 
-      # TWA-M: true wind angle relative to the leg bearing (TWD - BTW),
-      # normalized to (-180, 180]. Negative = wind off port, positive = starboard.
-      twam_col <- ((twd_col - btw_col + 180) %% 360) - 180
-      course_df$`TWA-M (°)` <- round(twam_col, 0)
+      course_df$TWS <- round(tws_col, 1)
+      course_df$TWD <- round(twd_col, 0)
+      course_df$PolPrfSpd <- round(polar_col, 2)
+      course_df$Sailed <- round(sailed_col, 2)
+      course_df$SOG <- round(sog_col, 2)
+      course_df$STW <- round(stw_col, 2)
 
-      # Place BTW and TWA-M immediately right of Longitude, and the wind
-      # columns immediately left of Distance.
+      # PolPerfTm: time-based polar performance for the leg -- the signed
+      # difference between how long the Sailed distance actually took at the
+      # boat's mean STW, and how long that same distance would have taken at
+      # the leg's mean reference-polar (target) STW. Both sides use STW (not
+      # real mark-to-mark elapsed time, which reflects SOG/ground-track and
+      # would mix in current/leeway/tacking effects unrelated to boat speed).
+      # Positive means the boat took longer than the reference polars would
+      # predict (time lost sailing slower than target); negative means it
+      # took less time (time gained sailing faster than target) -- i.e. the
+      # sign is the OPPOSITE of PolPrfSpd's (faster = positive speed delta,
+      # but negative/shorter time; slower = negative speed delta, but
+      # positive/longer time).
+      #
+      # IMPORTANT: the "actual mean STW" used here must come from the exact
+      # same set of fixes as polar_col (PolPrfSpd) and target_stw_col -- i.e.
+      # fixes with a valid Polar_Perf_STW, not every fix with a valid
+      # stw_knots (course_df$STW's sample, stw_col, can include extra fixes
+      # where wind data was missing so no polar comparison was possible).
+      # Mixing samples could let the two metrics disagree about which is
+      # faster. Reconstructing the matched-sample STW as target_stw_col +
+      # polar_col -- which holds by construction, since target_stw_col was
+      # itself derived as (matched-sample STW) - polar_col -- guarantees
+      # mean(matched STW) - mean(target STW) == PolPrfSpd exactly, so
+      # PolPerfTm's sign is always the reliable, opposite mirror of
+      # PolPrfSpd's.
+      stw_matched_col <- target_stw_col + polar_col
+      actual_stw_secs <- ifelse(
+        !is.na(stw_matched_col) & stw_matched_col > 0 & !is.na(sailed_col),
+        (sailed_col / stw_matched_col) * 3600,
+        NA_real_
+      )
+      target_secs <- ifelse(
+        !is.na(target_stw_col) & target_stw_col > 0 & !is.na(sailed_col),
+        (sailed_col / target_stw_col) * 3600,
+        NA_real_
+      )
+      pol_perf_t_secs <- actual_stw_secs - target_secs
+      # Formats a signed seconds value as "+mm:ss" (or "+hh:mm:ss" once the
+      # magnitude reaches an hour); NA stays NA.
+      format_signed_hms <- function(secs) {
+        vapply(secs, function(s) {
+          if (is.na(s)) return(NA_character_)
+          sign_chr <- if (s < 0) "-" else "+"
+          s <- abs(s)
+          hrs  <- floor(s / 3600)
+          mins <- floor((s %% 3600) / 60)
+          ssec <- round(s %% 60)
+          if (hrs > 0) {
+            sprintf("%s%d:%02d:%02d", sign_chr, hrs, mins, ssec)
+          } else {
+            sprintf("%s%02d:%02d", sign_chr, mins, ssec)
+          }
+        }, character(1))
+      }
+      course_df$PolPerfTm <- format_signed_hms(pol_perf_t_secs)
+
+      # TWA: true wind angle relative to the leg bearing (TWD - BTW),
+      # normalized to (-180, 180]. Negative TWA = wind off the port side
+      # (a port tack), positive = wind off the starboard side (a starboard
+      # tack). The displayed TWA is unsigned; tack is broken out into its
+      # own column. Near dead-downwind (within DEAD_ZONE_DEG of 180) there's
+      # no reliable side to call -- a few degrees of wind noise can flip the
+      # sign (e.g. 176 vs -176) even though the boat's angle to the wind
+      # barely changed -- so those legs are tagged "DWN" (running) instead of
+      # a fragile P/S guess. Near head-to-wind (within DEAD_ZONE_DEG of 0) is
+      # tagged "Up" (close-hauled/head-to-wind): same instability, but on the
+      # upwind side rather than a downwind run.
+      DEAD_ZONE_DEG <- 5
+      twam_raw <- ((twd_col - btw_col + 180) %% 360) - 180
+      twam_abs <- round(abs(twam_raw), 0)
+      course_df$TWA <- twam_abs
+      # Wrap: the correction (in degrees, a multiple of 360 in practice) that
+      # reconciles the raw arithmetic bearing difference (BTW - TWD) with the
+      # normalized TWA, defined so that BTW - TWD - Wrap == TWA always (an
+      # algebraic identity by construction, not just for typical values).
+      course_df$Wrap <- (course_df$BTW - course_df$TWD) - course_df$TWA
+      course_df$Tack <- dplyr::case_when(
+        is.na(twam_raw) ~ NA_character_,
+        twam_abs >= 180 - DEAD_ZONE_DEG ~ "DWN",
+        twam_abs <= DEAD_ZONE_DEG ~ "Up",
+        twam_raw < 0 ~ "P",
+        twam_raw > 0 ~ "S",
+        TRUE ~ NA_character_
+      )
+
+      # Capture the last mark's rounding time (raw POSIXct) before Time is
+      # reformatted to a display string, so the Total row's elapsed time can
+      # still be computed from it below.
+      last_mark_time <- course_df$Time[nrow(course_df)]
+
+      # Render the rounding time as a local (military/24-hour) clock time and
+      # drop the internal helper columns used only to compute it.
+      course_df$Time <- format(course_df$Time, "%H:%M:%S")
+
+      # Combine Latitude/Longitude (each already a degrees-decimal-minutes
+      # string, e.g. "27° 54.22") into a single "Lat/Long" column.
+      course_df$`Lat/Long` <- ifelse(
+        is.na(course_df$Latitude) | is.na(course_df$Longitude),
+        NA_character_,
+        paste0(course_df$Latitude, " / ", course_df$Longitude)
+      )
+
       course_df <- course_df |>
-        relocate(`BTW (°)`, `TWA-M (°)`, .after = Longitude) |>
-        relocate(`TWS (kt)`, `TWD (°)`, .before = `Distance (nm)`) |>
-        relocate(`Polar Perf`, .after = `Distance (nm)`)
+        select(-Latitude, -Longitude, -lat_dd, -lon_dd, -leg_start, -dist_to_mark_m)
 
       # Distance-weighted race polar performance: each leg's polar perf weighted
-      # by that leg's distance, over legs where both are available.
+      # by that leg's Rhumb distance, over legs where both are available.
       w_ok <- !is.na(polar_col) & !is.na(dist_nm)
       total_polar <- if (any(w_ok) && sum(dist_nm[w_ok]) > 0) {
         sum(polar_col[w_ok] * dist_nm[w_ok]) / sum(dist_nm[w_ok])
@@ -1407,24 +1570,254 @@ server <- function(input, output, session) {
         NA_real_
       }
 
-      # Append a total row (wind columns blank; polar perf distance-weighted)
+      # Simple mean for TWS; circular mean for TWD (a plain mean of compass
+      # bearings would be wrong across the 0/360 wrap).
+      avg_tws <- if (any(!is.na(tws_col))) mean(tws_col, na.rm = TRUE) else NA_real_
+      avg_sog <- if (any(!is.na(sog_col))) mean(sog_col, na.rm = TRUE) else NA_real_
+      avg_stw <- if (any(!is.na(stw_col))) mean(stw_col, na.rm = TRUE) else NA_real_
+      avg_twd <- if (any(!is.na(twd_col))) {
+        (atan2(mean(sin(twd_col * pi / 180), na.rm = TRUE),
+               mean(cos(twd_col * pi / 180), na.rm = TRUE)) * 180 / pi) %% 360
+      } else {
+        NA_real_
+      }
+
+      # A "Race Start" row above the first leg, using the scheduled start time
+      # from the Race Calendar (the gun) -- not a mark, so no position/wind/
+      # distance data. Elapsed time (start -> last mark) is shown in the
+      # Total row below rather than here.
+      race_start_row <- tibble(
+        `#` = "", Mark = "Race Start",
+        Time = format(cal_row$start, "%H:%M:%S"),
+        `Lat/Long` = ""
+      )
+
+      # Elapsed time from the scheduled race start to the last mark's
+      # rounding time (i.e. total race duration by the marks table).
+      elapsed_fmt <- ""
+      if (!is.na(last_mark_time) && !is.na(cal_row$start)) {
+        elapsed_secs <- as.numeric(difftime(last_mark_time, cal_row$start, units = "secs"))
+        if (!is.na(elapsed_secs) && elapsed_secs >= 0) {
+          hrs  <- floor(elapsed_secs / 3600)
+          mins <- floor((elapsed_secs %% 3600) / 60)
+          secs <- round(elapsed_secs %% 60)
+          elapsed_fmt <- sprintf("%02d:%02d:%02d", hrs, mins, secs)
+        }
+      }
+
+      # Append the footer/Total row (Rhumb/Sailed distance summed, polar perf
+      # distance-weighted, TWS/TWD/SOG/STW averaged, Time holding the elapsed
+      # duration from Race Start to the last mark).
       course_df <- bind_rows(
+        race_start_row,
         course_df |> mutate(`#` = as.character(`#`)),
         tibble(
-          `#` = "", Leg = "Total", Mark = "",
-          Latitude = "", Longitude = "",
-          `TWS (kt)` = NA_real_, `TWD (°)` = NA_real_,
-          `Distance (nm)` = round(sum(dist_nm, na.rm = TRUE), 2),
-          `Polar Perf` = round(total_polar, 2)
+          `#` = "Total", Mark = "", Time = elapsed_fmt,
+          `Lat/Long` = "",
+          TWS = round(avg_tws, 1), TWD = round(avg_twd, 0),
+          SOG = round(avg_sog, 2), STW = round(avg_stw, 2),
+          Rhumb  = round(sum(dist_nm, na.rm = TRUE), 2),
+          Sailed = round(sum(sailed_col, na.rm = TRUE), 2),
+          PolPerfTm = format_signed_hms(
+            if (all(is.na(pol_perf_t_secs))) NA_real_ else sum(pol_perf_t_secs, na.rm = TRUE)
+          ),
+          PolPrfSpd = round(total_polar, 2)
         )
       )
+
+      # Place Time, TWS, Tack, BTW, TWD, Wrap, and TWA right of Lat/Long (TWS
+      # left of Tack, Tack left of BTW, TWD right of BTW, Wrap left of TWA);
+      # SOG/STW left of Rhumb; Sailed right of Rhumb; and PolPerfTm/
+      # PolPrfSpd after Sailed. Done on the final bound table (rather than
+      # on course_df before appending the Race Start/Total rows) because
+      # bind_rows() takes shared columns' position from whichever input frame
+      # introduces them first, which would otherwise re-lock Time/Lat/Long
+      # back to race_start_row's declared order.
+      course_df <- course_df |>
+        relocate(`Lat/Long`, .after = Mark) |>
+        relocate(Time, BTW, TWA, Tack, .after = `Lat/Long`) |>
+        relocate(TWS, TWD, SOG, STW, .before = Rhumb) |>
+        relocate(Sailed, .after = Rhumb) |>
+        relocate(PolPrfSpd, PolPerfTm, .after = Sailed) |>
+        relocate(Tack, .before = BTW) |>
+        relocate(TWD, .after = BTW) |>
+        relocate(TWS, .before = Tack) |>
+        relocate(Wrap, .before = TWA)
     }
+
+    # Combine the leg number ("#") and mark identifier ("Mark") into a single
+    # "Leg" column, e.g. "3 - G" -- overwriting the old descriptive "Leg"
+    # text (unused). Race Start shows just "Race Start" (its Mark value) and
+    # the Total row is left blank (rather than showing the word "Total") so
+    # it reads as a plain footer row.
+    course_df <- course_df |>
+      mutate(
+        Leg = dplyr::case_when(
+          `#` == ""      ~ Mark,
+          `#` == "Total" ~ "",
+          TRUE           ~ paste0(`#`, " - ", Mark)
+        )
+      ) |>
+      select(-`#`, -Mark) |>
+      # Overwriting the existing "Leg" column above keeps its (middle-of-
+      # table) position, so move the combined column to the far left.
+      relocate(Leg)
+
+    # Column indices (0-based, as DataTables expects) for the vertical
+    # divider lines, computed from the final column order so they track any
+    # future reordering rather than being hardcoded. TWS gets both a left
+    # and a right divider, isolating it visually under its own "Avg (kt)"
+    # header group.
+    divider_left_cols  <- c("TWS", "BTW", "SOG")
+    divider_right_cols <- c("TWS", "STW", "Sailed")
+    divider_left_idx  <- match(divider_left_cols, names(course_df)) - 1
+    divider_right_idx <- match(divider_right_cols, names(course_df)) - 1
+
+    # Narrow, fixed pixel widths for every column (rather than leaving them
+    # to auto-size) so the table's total width stays small enough to avoid
+    # both horizontal scrolling and cell word-wrapping.
+    col_widths <- c(
+      Leg = "70px", `Lat/Long` = "150px", Time = "65px",
+      TWS = "40px", Tack = "40px", BTW = "40px", TWD = "40px",
+      Wrap = "40px", TWA = "40px",
+      SOG = "50px", STW = "50px",
+      Rhumb = "50px", Sailed = "50px",
+      PolPrfSpd = "50px", PolPerfTm = "60px"
+    )
+    width_idx <- match(names(col_widths), names(course_df)) - 1
+    width_defs <- Map(function(i, w) list(width = w, targets = i), width_idx, unname(col_widths))
+    width_defs <- width_defs[!is.na(width_idx)]
+
+    # Two-row header: every column keeps its existing label as the bottom
+    # row (with a blank top cell spanning both rows), except for columns
+    # belonging to one of the groups below, which get a shared top-row
+    # label spanning the group instead of a blank cell -- PolPerfTm and
+    # PolPrfSpd are additionally relabeled "Time"/"Spd" on the bottom row.
+    # Built from names(course_df) (rather than hardcoded indices) so it
+    # stays in sync if the column set or order changes; each group's listed
+    # columns must remain contiguous in the final column order.
+    col_names <- names(course_df)
+    display_label <- c(PolPerfTm = "Time", PolPrfSpd = "Spd")
+    header_groups <- list(
+      list(label = "Angle (deg)",    cols = c("BTW", "TWD", "Wrap", "TWA")),
+      list(label = "Avg Spd (NM/h)", cols = c("SOG", "STW")),
+      list(label = "Distance (nm)",  cols = c("Rhumb", "Sailed")),
+      list(label = "Polar Perf",     cols = c("PolPrfSpd", "PolPerfTm"))
+    )
+
+    n <- length(col_names)
+    grp_label_for_col <- rep(NA_character_, n)
+    grp_start_col     <- rep(FALSE, n)
+    grp_span_for_col  <- rep(NA_integer_, n)
+    # DataTables' columnDefs className mechanism (divider_left_idx/
+    # divider_right_idx below) only reaches the bottom header row -- the row
+    # DT treats as "the" per-column header -- so a divider on, say, BTW
+    # shows up on BTW's own cell but not on the "Angle (deg)" group cell
+    # above it, leaving the vertical line starting partway down the header.
+    # grp_class_for_col carries the matching divider class(es) onto each
+    # group's top-row cell too, keyed on whether the group's first/last
+    # member column is itself a left/right divider column, so the line runs
+    # the full header height.
+    grp_class_for_col <- rep(NA_character_, n)
+    for (g in header_groups) {
+      idx <- match(g$cols, col_names)
+      idx <- idx[!is.na(idx)]
+      if (length(idx) == 0) next
+      grp_label_for_col[idx] <- g$label
+      grp_start_col[idx[1]]  <- TRUE
+      grp_span_for_col[idx[1]] <- length(idx)
+      grp_classes <- c(
+        if (col_names[idx[1]] %in% divider_left_cols) "course-divider-left",
+        if (col_names[idx[length(idx)]] %in% divider_right_cols) "course-divider-right"
+      )
+      if (length(grp_classes) > 0) grp_class_for_col[idx[1]] <- paste(grp_classes, collapse = " ")
+    }
+    grp_idx <- which(!is.na(grp_label_for_col))
+
+    header_sketch <- htmltools::withTags(table(
+      class = "display",
+      # Explicit per-column widths via <colgroup>, matching col_widths
+      # below -- required for table-layout: fixed (see CSS comment) since
+      # the header's first row mixes colspan group cells with rowspan
+      # cells and can't otherwise convey individual column widths.
+      colgroup(
+        lapply(col_names, function(nm) {
+          tags$col(style = paste0("width:", col_widths[[nm]], ";"))
+        })
+      ),
+      thead(
+        tr(
+          lapply(seq_along(col_names), function(i) {
+            nm <- col_names[i]
+            if (grp_start_col[i]) {
+              th(colspan = grp_span_for_col[i],
+                 class = if (is.na(grp_class_for_col[i])) NULL else grp_class_for_col[i],
+                 style = "text-align:center; white-space:nowrap;", grp_label_for_col[i])
+            } else if (!is.na(grp_label_for_col[i])) {
+              NULL
+            } else {
+              th(rowspan = 2, style = "white-space:nowrap;",
+                 if (nm %in% names(display_label)) display_label[[nm]] else nm)
+            }
+          })
+        ),
+        tr(
+          lapply(grp_idx, function(i) {
+            nm <- col_names[i]
+            th(style = "white-space:nowrap;", if (nm %in% names(display_label)) display_label[[nm]] else nm)
+          })
+        )
+      )
+    ))
 
     datatable(
       course_df,
-      options = list(dom = "t", ordering = FALSE, scrollX = TRUE),
+      container = header_sketch,
+      # dom = "t" hides pagination controls, so pageLength must cover every
+      # row (course marks + the appended Race Start/Total rows) or the last
+      # rows -- including the Total row -- would be silently cut off.
+      options = list(
+        dom = "t", ordering = FALSE,
+        pageLength = nrow(course_df),
+        # className-based dividers (rather than formatStyle) so the vertical
+        # lines run through the header row too, not just the body cells.
+        columnDefs = c(
+          list(
+            list(className = "course-divider-left",  targets = divider_left_idx),
+            list(className = "course-divider-right", targets = divider_right_idx)
+          ),
+          width_defs
+        ),
+        # The <colgroup> above (plus table-layout: fixed) now owns column
+        # sizing; DataTables' own autoWidth pass doesn't account for the
+        # colspan group header row and was the source of the header/body
+        # misalignment.
+        autoWidth = FALSE
+      ),
       rownames = FALSE
-    )
+    ) |>
+      formatRound(columns = c("SOG", "STW", "Rhumb", "Sailed", "PolPrfSpd"), digits = 2) |>
+      formatRound(columns = "Wrap", digits = 0) |>
+      formatStyle(columns = c("Time", "Tack", "Wrap", "SOG", "STW", "Rhumb", "Sailed"), textAlign = "center") |>
+      formatStyle(columns = "TWS", textAlign = "right") |>
+      # Style the Total row (the last row of the table, identified by its
+      # blank Leg cell -- see comments above) like a footer: a header-toned
+      # background/text (slightly different shade than the actual header)
+      # plus a rule above it matching the header's bottom border. Background/
+      # font styles use target = "row" (background-color renders fine on a
+      # <tr>), but the border is set on every cell individually via
+      # valueColumns, since a border set directly on a <tr> is not reliably
+      # rendered by browsers in HTML tables.
+      formatStyle(
+        columns = "Leg", target = "row",
+        backgroundColor = styleEqual("", "rgba(255,255,255,0.05)", default = "inherit"),
+        color           = styleEqual("", "#e8edf6", default = "inherit"),
+        fontWeight      = styleEqual("", "700", default = "inherit")
+      ) |>
+      formatStyle(
+        columns = col_names, valueColumns = "Leg",
+        `border-top` = styleEqual("", "1px solid rgba(255,255,255,0.14)", default = "none")
+      )
   })
 
   # ---- Crew table for Race Analytics tab ----
@@ -1553,7 +1946,7 @@ server <- function(input, output, session) {
       group_by(Season = season) |>
       summarise(
         Races   = n(),
-        Days    = n_distinct(as.Date(start)),
+        Days    = n_distinct(as.Date(start, tz = LOCAL_TZ)),
         .avg_place = {pn <- suppressWarnings(as.numeric(place)); if (all(is.na(pn))) NA_real_ else round(mean(pn, na.rm = TRUE), 1)},
         .avg_fleet = {fn <- suppressWarnings(as.numeric(fleet)); if (all(is.na(fn))) NA_real_ else round(mean(fn, na.rm = TRUE), 1)},
         NM          = round(sum(length, na.rm = TRUE), 1),
@@ -1568,7 +1961,7 @@ server <- function(input, output, session) {
       mutate(
         `Place / Fleet / %` = ifelse(
           is.na(.avg_place) | is.na(.avg_fleet), NA_character_,
-          paste0(.avg_place, "<br>", .avg_fleet, "<br>", round(.avg_place / .avg_fleet * 100), "%")
+          paste0(.avg_place, " / ", .avg_fleet, " / ", round(.avg_place / .avg_fleet * 100), "%")
         ),
         .before = NM
       ) |>
@@ -1581,9 +1974,9 @@ server <- function(input, output, session) {
     
     pfp_idx <- which(names(summary_df) == "Place / Fleet / %")
     header_names <- names(summary_df)
-    header_names[pfp_idx] <- "Place<br>Fleet<br>%"
+    header_names[pfp_idx] <- "Place/Fleet/%"
     
-    shared_widths <- c("50px","55px","105px","45px","60px","60px","60px","70px","75px")
+    shared_widths <- c("50px","55px","115px","45px","60px","60px","60px","70px","75px")
     col_widths_season <- c("200px", "60px", shared_widths)
     sketch <- htmltools::withTags(table(
       class = "display",
@@ -1627,7 +2020,7 @@ server <- function(input, output, session) {
                           var ap = (places.reduce(function(a,b){return a+b;},0)/places.length).toFixed(1);
                           var af = (fleets.reduce(function(a,b){return a+b;},0)/fleets.length).toFixed(1);
                           var pct = Math.round(ap / af * 100);
-                          $(api.column(col).footer()).html(ap + '<br>' + af + '<br>' + pct + '%');
+                          $(api.column(col).footer()).html(ap + ' / ' + af + ' / ' + pct + '%');
                         } else {
                           $(api.column(col).footer()).html('');
                         }
@@ -1681,7 +2074,7 @@ server <- function(input, output, session) {
       group_by(Series = series_label) |>
       summarise(
         Races   = n(),
-        Days    = n_distinct(as.Date(start)),
+        Days    = n_distinct(as.Date(start, tz = LOCAL_TZ)),
         .avg_place = {pn <- suppressWarnings(as.numeric(place)); if (all(is.na(pn))) NA_real_ else round(mean(pn, na.rm = TRUE), 1)},
         .avg_fleet = {fn <- suppressWarnings(as.numeric(fleet)); if (all(is.na(fn))) NA_real_ else round(mean(fn, na.rm = TRUE), 1)},
         NM          = round(sum(length, na.rm = TRUE), 1),
@@ -1696,7 +2089,7 @@ server <- function(input, output, session) {
       mutate(
         `Place / Fleet / %` = ifelse(
           is.na(.avg_place) | is.na(.avg_fleet), NA_character_,
-          paste0(.avg_place, "<br>", .avg_fleet, "<br>", round(.avg_place / .avg_fleet * 100), "%")
+          paste0(.avg_place, " / ", .avg_fleet, " / ", round(.avg_place / .avg_fleet * 100), "%")
         ),
         .before = NM
       ) |>
@@ -1705,9 +2098,9 @@ server <- function(input, output, session) {
     
     pfp_idx <- which(names(summary_df) == "Place / Fleet / %")
     header_names <- names(summary_df)
-    header_names[pfp_idx] <- "Place<br>Fleet<br>%"
+    header_names[pfp_idx] <- "Place/Fleet/%"
     
-    shared_widths <- c("50px","55px","105px","45px","60px","60px","60px","70px","75px")
+    shared_widths <- c("50px","55px","115px","45px","60px","60px","60px","70px","75px")
     col_widths_series <- c("200px", "60px", shared_widths)
     sketch <- htmltools::withTags(table(
       class = "display",
@@ -1751,7 +2144,7 @@ server <- function(input, output, session) {
                           var ap = (places.reduce(function(a,b){return a+b;},0)/places.length).toFixed(1);
                           var af = (fleets.reduce(function(a,b){return a+b;},0)/fleets.length).toFixed(1);
                           var pct = Math.round(ap / af * 100);
-                          $(api.column(col).footer()).html(ap + '<br>' + af + '<br>' + pct + '%');
+                          $(api.column(col).footer()).html(ap + ' / ' + af + ' / ' + pct + '%');
                         } else {
                           $(api.column(col).footer()).html('');
                         }
@@ -1803,7 +2196,7 @@ server <- function(input, output, session) {
       transmute(
         `#` = row_number(),
         Race = paste0(
-          format(as.Date(start), "%m/%d/%Y"),
+          format(as.Date(start, tz = LOCAL_TZ), "%m/%d/%Y"),
           ifelse(is.na(series) | series == "", "", paste0("<br>", series)),
           "<br>", race
         ),
@@ -1811,7 +2204,7 @@ server <- function(input, output, session) {
         .fleet_num = suppressWarnings(as.numeric(fleet)),
         `Place / Fleet / %` = ifelse(
           is.na(.place_num) | is.na(.fleet_num), "",
-          paste0(as.integer(.place_num), "<br>", as.integer(.fleet_num), "<br>", round(.place_num / .fleet_num * 100), "%")
+          paste0(as.integer(.place_num), " / ", as.integer(.fleet_num), " / ", round(.place_num / .fleet_num * 100), "%")
         ),
         Days       = days_on_water,
         Hours      = ifelse(is.na(duration_hrs), NA_real_, round(duration_hrs, 1)),
@@ -1828,9 +2221,9 @@ server <- function(input, output, session) {
     pfp_col <- which(names(res) == "Place / Fleet / %") - 1
     pfp_idx <- pfp_col + 1
     header_names <- names(res)
-    header_names[pfp_idx] <- "Place<br>Fleet<br>%"
+    header_names[pfp_idx] <- "Place/Fleet/%"
     
-    shared_widths <- c("50px","55px","105px","45px","60px","60px","60px","70px","75px")
+    shared_widths <- c("50px","55px","115px","45px","60px","60px","60px","70px","75px")
     col_widths_detail <- c("35px", "225px", shared_widths)
     sketch <- htmltools::withTags(table(
       class = "display",
@@ -1881,7 +2274,7 @@ server <- function(input, output, session) {
                   var ap = (places.reduce(function(a,b){return a+b;},0)/places.length).toFixed(1);
                   var af = (fleets.reduce(function(a,b){return a+b;},0)/fleets.length).toFixed(1);
                   var pct = Math.round(ap / af * 100);
-                  $(api.column(col).footer()).html(ap + '<br>' + af + '<br>' + pct + '%');
+                  $(api.column(col).footer()).html(ap + ' / ' + af + ' / ' + pct + '%');
                 } else {
                   $(api.column(col).footer()).html('');
                 }
@@ -1993,6 +2386,104 @@ server <- function(input, output, session) {
       )
   }) |> bindCache(input$ra_season_select, input$ra_series_select, input$ra_race_select)
 
+  # ---------- MARK ROUNDING TIMES: shared rounding-detection reactive ----------
+  # Computes, for the selected race's course marks (start line, numbered marks,
+  # finish line), the local time the boat came closest to each mark's charted
+  # position -- searching only within the race's start/end window, since
+  # track() is already filtered to that range. Marks are walked in course
+  # order with a bounded forward-time search so a mark that's revisited later
+  # in the course (e.g. the start buoy doubling as a later rounding mark)
+  # can't have its rounding time confused with a later pass near the same
+  # spot. Shared by the Course table (adds per-leg distance/wind columns) and
+  # the boat speed plot (labels rounding times on the time axis).
+  ra_mark_roundings <- reactive({
+    cal_row <- ra_selected_row()
+    req(cal_row)
+    marks_ref <- data_rds$marks_ref
+
+    course_cols <- grep("^(start_line|mark_\\d+|finish_line)$", names(cal_row), value = TRUE)
+    mark_nums <- suppressWarnings(as.integer(gsub("mark_", "", course_cols)))
+    course_cols <- course_cols[order(
+      ifelse(course_cols == "start_line", -1, ifelse(course_cols == "finish_line", Inf, mark_nums))
+    )]
+    col_labels <- dplyr::case_when(
+      course_cols == "start_line"  ~ "Start Line",
+      course_cols == "finish_line" ~ "Finish Line",
+      TRUE ~ paste("Mark", gsub("mark_", "", course_cols))
+    )
+    mark_values <- vapply(course_cols, function(cc) as.character(cal_row[[cc]]), character(1))
+    keep <- !is.na(mark_values)
+    if (!any(keep)) return(tibble())
+
+    course_df <- tibble(`#` = seq_len(sum(keep)), Leg = col_labels[keep], Mark = mark_values[keep])
+    if (!is.null(marks_ref) && nrow(marks_ref) > 0) {
+      course_df <- course_df |>
+        left_join(marks_ref, by = c("Mark" = "mark")) |>
+        rename(Latitude = lat, Longitude = lon)
+    } else {
+      course_df$Latitude  <- NA_character_
+      course_df$Longitude <- NA_character_
+    }
+
+    # Marks are stored as degrees-decimal-minutes strings (e.g. "27° 54.22").
+    dm_to_dd <- function(x) {
+      m <- regmatches(x, regexec("(-?[0-9]+)[^0-9]+([0-9.]+)", x))
+      vapply(m, function(p) {
+        if (length(p) < 3) return(NA_real_)
+        d  <- suppressWarnings(as.numeric(p[2]))
+        mm <- suppressWarnings(as.numeric(p[3]))
+        if (is.na(d) || is.na(mm)) return(NA_real_)
+        sign(d) * (abs(d) + mm / 60)
+      }, numeric(1))
+    }
+    lat_num <-  abs(dm_to_dd(course_df$Latitude))
+    lon_num <- -abs(dm_to_dd(course_df$Longitude))
+    course_df$lat_dd <- lat_num
+    course_df$lon_dd <- lon_num
+
+    n <- nrow(course_df)
+    leg_start_col   <- rep(as.POSIXct(NA_real_, tz = LOCAL_TZ), n)
+    time_col        <- rep(as.POSIXct(NA_real_, tz = LOCAL_TZ), n)
+    dist_to_mark_m  <- rep(NA_real_, n)
+
+    df_track <- tryCatch(track(), error = function(e) NULL)
+    if (!is.null(df_track) && nrow(df_track) > 0 &&
+        all(c("latitude", "longitude", "datetime_local") %in% names(df_track))) {
+      trk <- df_track |>
+        filter(!is.na(latitude), !is.na(longitude), !is.na(datetime_local)) |>
+        arrange(datetime_local)
+      if (nrow(trk) > 0) {
+        race_end_time <- max(trk$datetime_local, na.rm = TRUE)
+        prev_time <- min(trk$datetime_local, na.rm = TRUE)
+        for (i in seq_len(n)) {
+          if (is.na(lat_num[i]) || is.na(lon_num[i])) next
+          leg_start_col[i] <- prev_time
+          # See race_course_table for the rationale behind bounding this
+          # forward search rather than scanning the whole rest of the race.
+          legs_remaining <- n - i + 1
+          time_remaining <- as.numeric(difftime(race_end_time, prev_time, units = "secs"))
+          max_lookahead <- max(600, min(time_remaining, 3 * time_remaining / legs_remaining))
+          cand <- trk |> filter(datetime_local >= prev_time, datetime_local <= prev_time + max_lookahead)
+          if (nrow(cand) == 0) cand <- trk |> filter(datetime_local >= prev_time)
+          if (nrow(cand) == 0) next
+          d <- geosphere::distHaversine(
+            cbind(cand$longitude, cand$latitude),
+            c(lon_num[i], lat_num[i])
+          )
+          j <- which.min(d)
+          time_col[i] <- cand$datetime_local[j]
+          dist_to_mark_m[i] <- d[j]
+          prev_time <- time_col[i]
+        }
+      }
+    }
+
+    course_df$leg_start      <- leg_start_col
+    course_df$Time           <- time_col
+    course_df$dist_to_mark_m <- dist_to_mark_m
+    course_df
+  })
+
   # ---------- LEAFLET MAP: GPS track rendered as colored polylines ----------
   # Renders the race's GPS track on an interactive OpenStreetMap tile layer.
   # Track segments are split by local date and color-coded so multi-day races
@@ -2020,6 +2511,19 @@ server <- function(input, output, session) {
                   "No track or course data to display for selected filters."))
 
     m <- leaflet() |> addTiles()
+
+    # North arrow. This map uses the default Web Mercator tile projection
+    # with no bearing/rotation applied anywhere, so north is always up --
+    # the indicator is a static label, not computed from anything.
+    north_arrow_html <- paste0(
+      '<div style="background: rgba(255,255,255,0.85); border-radius: 4px; ',
+      'padding: 3px 8px; text-align: center; font-family: sans-serif; color: #111;">',
+      '<div style="font-size: 16px; line-height: 1;">&#8593;</div>',
+      '<div style="font-size: 11px; line-height: 1; font-weight: bold;">N</div>',
+      '</div>'
+    )
+    m <- m |>
+      addControl(html = htmltools::HTML(north_arrow_html), position = "topleft")
 
     # GPS track (only when NMEA data exists), color-coded by local day
     day_labels <- character(0)
@@ -2055,7 +2559,7 @@ server <- function(input, output, session) {
             data      = marks_pts,
             lng       = ~lon_dd,
             lat       = ~lat_dd,
-            color     = "#999999",
+            color     = "red",
             weight    = 1,
             opacity   = 0.8,
             group     = "Course"
@@ -2087,7 +2591,16 @@ server <- function(input, output, session) {
           position = "bottomright",
           colors   = pal(day_labels),
           labels   = day_labels,
-          title    = "Day (local)"
+          title    = "Sailed (local day)"
+        )
+    }
+    if (has_marks && nrow(marks_pts) > 1) {
+      m <- m |>
+        addLegend(
+          position = "bottomright",
+          colors   = "red",
+          labels   = "Rhumb",
+          title    = NULL
         )
     }
 
@@ -2147,6 +2660,37 @@ server <- function(input, output, session) {
                             stw_knots = "STW")
       )
 
+    # Mark rounding times, from the same shared reactive used by the Course
+    # table, for labeling where the boat was closest to each mark. A short
+    # label ("Start"/"1".."Finish") keeps the vertical-text annotations from
+    # overlapping in the compact plot height.
+    marks_df <- tryCatch(ra_mark_roundings(), error = function(e) tibble())
+    if (is.null(marks_df) || nrow(marks_df) == 0) marks_df <- tibble()
+    if (nrow(marks_df) > 0) {
+      marks_df <- marks_df |>
+        filter(!is.na(Time)) |>
+        mutate(label = dplyr::case_when(
+          Leg == "Start Line"  ~ "Start",
+          Leg == "Finish Line" ~ "Finish",
+          TRUE ~ gsub("^Mark ", "M", Leg)
+        ))
+    }
+
+    marks_layer <- if (nrow(marks_df) > 0) {
+      list(
+        geom_vline(
+          data = marks_df, aes(xintercept = Time), inherit.aes = FALSE,
+          linetype = "dashed", color = "grey40", alpha = 0.6
+        ),
+        geom_text(
+          data = marks_df, aes(x = Time, y = Inf, label = label), inherit.aes = FALSE,
+          angle = 90, vjust = 1.1, hjust = 1, size = 2.6, color = "grey30"
+        )
+      )
+    } else {
+      list()
+    }
+
     ggplot(
       df_long,
       aes(
@@ -2161,6 +2705,7 @@ server <- function(input, output, session) {
       geom_line() +
       scale_size_manual(values = c("Raw" = 0.3, "1-min MA" = 1.8)) +
       scale_alpha_manual(values = c("Raw" = 0.25, "1-min MA" = 1.0)) +
+      marks_layer +
       labs(
         x     = "Local Time",
         y     = "Speed (knots)",
@@ -2497,7 +3042,7 @@ server <- function(input, output, session) {
     # Group by race + day so same-named races on different dates stay separate
     completed <- df_track %>%
       filter(!is.na(race), nzchar(race)) %>%
-      mutate(race_start_date = as.Date(datetime_local)) %>%
+      mutate(race_start_date = as.Date(datetime_local, tz = LOCAL_TZ)) %>%
       group_by(race, race_start_date) %>%
       summarise(
         start_time = min(datetime_local, na.rm = TRUE),
@@ -2527,7 +3072,7 @@ server <- function(input, output, session) {
         race  = as.character(race),
         start_time = start,
         end_time   = end,
-        race_start_date = as.Date(start),
+        race_start_date = as.Date(start, tz = LOCAL_TZ),
         Place = if ("place" %in% names(cal)) as.character(place) else NA_character_
       ) %>%
       filter(!is.na(race), nzchar(race), !is.na(start_time)) %>%
