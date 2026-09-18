@@ -410,11 +410,11 @@ ui <- fluidPage(
         font-size: 12px;
         white-space: nowrap;
       }
-      /* Allow Race column text to wrap in the detail table */
+      /* Race column: single line (date -- series -- race name), ellipsized
+         if it doesn't fit, matching the other two tables' row height. */
       #season_table table.dataTable td:nth-child(2) {
-        white-space: normal;
-        word-wrap: break-word;
-        overflow-wrap: break-word;
+        overflow: hidden;
+        text-overflow: ellipsis;
       }
 
 /* Leaflet border polish */
@@ -1512,6 +1512,18 @@ server <- function(input, output, session) {
       }
       course_df$PolPerfTm <- format_signed_hms(pol_perf_t_secs)
 
+      # Formats an unsigned seconds value as "hh:mm:ss"; NA (or negative,
+      # which shouldn't occur for elapsed/leg durations) stays NA.
+      format_hms <- function(secs) {
+        vapply(secs, function(s) {
+          if (is.na(s) || s < 0) return(NA_character_)
+          hrs  <- floor(s / 3600)
+          mins <- floor((s %% 3600) / 60)
+          ssec <- round(s %% 60)
+          sprintf("%02d:%02d:%02d", hrs, mins, ssec)
+        }, character(1))
+      }
+
       # TWA: true wind angle relative to the leg bearing (TWD - BTW),
       # normalized to (-180, 180]. Negative TWA = wind off the port side
       # (a port tack), positive = wind off the starboard side (a starboard
@@ -1541,10 +1553,10 @@ server <- function(input, output, session) {
         TRUE ~ NA_character_
       )
 
-      # Capture the last mark's rounding time (raw POSIXct) before Time is
-      # reformatted to a display string, so the Total row's elapsed time can
-      # still be computed from it below.
-      last_mark_time <- course_df$Time[nrow(course_df)]
+      # Keep the raw rounding time (POSIXct) alongside the formatted display
+      # string -- LegTime/Elapsed below are computed from it, then it's
+      # dropped before the table is built.
+      course_df$TimeRaw <- course_df$Time
 
       # Render the rounding time as a local (military/24-hour) clock time and
       # drop the internal helper columns used only to compute it.
@@ -1584,36 +1596,39 @@ server <- function(input, output, session) {
 
       # A "Race Start" row above the first leg, using the scheduled start time
       # from the Race Calendar (the gun) -- not a mark, so no position/wind/
-      # distance data. Elapsed time (start -> last mark) is shown in the
-      # Total row below rather than here.
+      # distance data. Its raw time anchors LegTime/Elapsed below (row 1's
+      # "leg" is start -> first mark).
       race_start_row <- tibble(
         `#` = "", Mark = "Race Start",
         Time = format(cal_row$start, "%H:%M:%S"),
+        TimeRaw = cal_row$start,
         `Lat/Long` = ""
       )
 
-      # Elapsed time from the scheduled race start to the last mark's
-      # rounding time (i.e. total race duration by the marks table).
-      elapsed_fmt <- ""
-      if (!is.na(last_mark_time) && !is.na(cal_row$start)) {
-        elapsed_secs <- as.numeric(difftime(last_mark_time, cal_row$start, units = "secs"))
-        if (!is.na(elapsed_secs) && elapsed_secs >= 0) {
-          hrs  <- floor(elapsed_secs / 3600)
-          mins <- floor((elapsed_secs %% 3600) / 60)
-          secs <- round(elapsed_secs %% 60)
-          elapsed_fmt <- sprintf("%02d:%02d:%02d", hrs, mins, secs)
-        }
-      }
+      # Body rows (Race Start + every course mark), in course order, used to
+      # derive the two elapsed-time columns:
+      #   LegTime -- how long that individual leg took (this row's time minus
+      #              the previous row's time); blank for Race Start, which
+      #              has no previous row.
+      #   Elapsed -- cumulative time since the scheduled start (the gun).
+      body_df <- bind_rows(race_start_row, course_df |> mutate(`#` = as.character(`#`)))
+      leg_time_secs  <- c(NA_real_, diff(as.numeric(body_df$TimeRaw)))
+      elapsed_secs_v <- as.numeric(body_df$TimeRaw) - as.numeric(body_df$TimeRaw[1])
+      body_df$LegTime <- format_hms(leg_time_secs)
+      body_df$Elapsed <- format_hms(elapsed_secs_v)
 
       # Append the footer/Total row (Rhumb/Sailed distance summed, polar perf
-      # distance-weighted, TWS/TWD/SOG/STW averaged, Time holding the elapsed
-      # duration from Race Start to the last mark).
+      # distance-weighted, TWS/TWD/SOG/STW averaged, and LegTime holding the
+      # sum of every individual leg's time -- which equals the elapsed time
+      # from Race Start to the last mark. Time/Elapsed are left blank here
+      # since neither is a single clock time or a further meaningful total.
+      total_leg_secs <- if (all(is.na(leg_time_secs))) NA_real_ else sum(leg_time_secs, na.rm = TRUE)
       course_df <- bind_rows(
-        race_start_row,
-        course_df |> mutate(`#` = as.character(`#`)),
+        body_df,
         tibble(
-          `#` = "Total", Mark = "", Time = elapsed_fmt,
+          `#` = "Total", Mark = "", Time = "",
           `Lat/Long` = "",
+          LegTime = format_hms(total_leg_secs),
           TWS = round(avg_tws, 1), TWD = round(avg_twd, 0),
           SOG = round(avg_sog, 2), STW = round(avg_stw, 2),
           Rhumb  = round(sum(dist_nm, na.rm = TRUE), 2),
@@ -1623,7 +1638,8 @@ server <- function(input, output, session) {
           ),
           PolPrfSpd = round(total_polar, 2)
         )
-      )
+      ) |>
+        select(-TimeRaw)
 
       # Place Time, TWS, Tack, BTW, TWD, Wrap, and TWA right of Lat/Long (TWS
       # left of Tack, Tack left of BTW, TWD right of BTW, Wrap left of TWA);
@@ -1635,7 +1651,7 @@ server <- function(input, output, session) {
       # back to race_start_row's declared order.
       course_df <- course_df |>
         relocate(`Lat/Long`, .after = Mark) |>
-        relocate(Time, BTW, TWA, Tack, .after = `Lat/Long`) |>
+        relocate(Time, LegTime, Elapsed, BTW, TWA, Tack, .after = `Lat/Long`) |>
         relocate(TWS, TWD, SOG, STW, .before = Rhumb) |>
         relocate(Sailed, .after = Rhumb) |>
         relocate(PolPrfSpd, PolPerfTm, .after = Sailed) |>
@@ -1678,6 +1694,7 @@ server <- function(input, output, session) {
     # both horizontal scrolling and cell word-wrapping.
     col_widths <- c(
       Leg = "70px", `Lat/Long` = "150px", Time = "65px",
+      LegTime = "60px", Elapsed = "60px",
       TWS = "40px", Tack = "40px", BTW = "40px", TWD = "40px",
       Wrap = "40px", TWA = "40px",
       SOG = "50px", STW = "50px",
@@ -1697,8 +1714,9 @@ server <- function(input, output, session) {
     # stays in sync if the column set or order changes; each group's listed
     # columns must remain contiguous in the final column order.
     col_names <- names(course_df)
-    display_label <- c(PolPerfTm = "Time", PolPrfSpd = "Spd")
+    display_label <- c(PolPerfTm = "Time", PolPrfSpd = "Spd", LegTime = "Leg", Elapsed = "Race")
     header_groups <- list(
+      list(label = "Elapsed (h:mm:ss)", cols = c("LegTime", "Elapsed")),
       list(label = "Angle (deg)",    cols = c("BTW", "TWD", "Wrap", "TWA")),
       list(label = "Avg Spd (NM/h)", cols = c("SOG", "STW")),
       list(label = "Distance (nm)",  cols = c("Rhumb", "Sailed")),
@@ -1798,7 +1816,7 @@ server <- function(input, output, session) {
     ) |>
       formatRound(columns = c("SOG", "STW", "Rhumb", "Sailed", "PolPrfSpd"), digits = 2) |>
       formatRound(columns = "Wrap", digits = 0) |>
-      formatStyle(columns = c("Time", "Tack", "Wrap", "SOG", "STW", "Rhumb", "Sailed"), textAlign = "center") |>
+      formatStyle(columns = c("Time", "LegTime", "Elapsed", "Tack", "Wrap", "SOG", "STW", "Rhumb", "Sailed"), textAlign = "center") |>
       formatStyle(columns = "TWS", textAlign = "right") |>
       # Style the Total row (the last row of the table, identified by its
       # blank Leg cell -- see comments above) like a footer: a header-toned
@@ -2196,9 +2214,9 @@ server <- function(input, output, session) {
       transmute(
         `#` = row_number(),
         Race = paste0(
-          format(as.Date(start, tz = LOCAL_TZ), "%m/%d/%Y"),
-          ifelse(is.na(series) | series == "", "", paste0("<br>", series)),
-          "<br>", race
+          format(as.Date(start, tz = LOCAL_TZ), "%m/%d/%y"),
+          ifelse(is.na(series) | series == "", "", paste0(" \u2014 ", series)),
+          " \u2014 ", race
         ),
         .place_num = suppressWarnings(as.numeric(place)),
         .fleet_num = suppressWarnings(as.numeric(fleet)),
@@ -2224,7 +2242,7 @@ server <- function(input, output, session) {
     header_names[pfp_idx] <- "Place/Fleet/%"
     
     shared_widths <- c("50px","55px","115px","45px","60px","60px","60px","70px","75px")
-    col_widths_detail <- c("35px", "225px", shared_widths)
+    col_widths_detail <- c("35px", "300px", shared_widths)
     sketch <- htmltools::withTags(table(
       class = "display",
       tags$colgroup(lapply(col_widths_detail, function(w) tags$col(style = paste0("width:", w)))),
@@ -2453,26 +2471,40 @@ server <- function(input, output, session) {
         filter(!is.na(latitude), !is.na(longitude), !is.na(datetime_local)) |>
         arrange(datetime_local)
       if (nrow(trk) > 0) {
-        race_end_time <- max(trk$datetime_local, na.rm = TRUE)
         prev_time <- min(trk$datetime_local, na.rm = TRUE)
+        # Rather than guessing a fixed forward-time budget per leg (which can
+        # truncate the search before the boat actually reaches a mark that
+        # takes longer than average to sail to -- e.g. a repeated mark late
+        # in a windward-leeward course -- walk forward tracking the running
+        # minimum distance to the mark and lock in the *first local minimum*:
+        # once the boat has moved GIVEUP_M past the closest point seen so
+        # far, that closest point is taken as the rounding. This finds the
+        # true closest approach regardless of how long the leg takes, while
+        # still not confusing this rounding with a much later revisit of the
+        # same mark (course loops), since the search stops as soon as the
+        # boat has clearly moved on rather than continuing to scan forward.
+        GIVEUP_M <- 300
         for (i in seq_len(n)) {
           if (is.na(lat_num[i]) || is.na(lon_num[i])) next
           leg_start_col[i] <- prev_time
-          # See race_course_table for the rationale behind bounding this
-          # forward search rather than scanning the whole rest of the race.
-          legs_remaining <- n - i + 1
-          time_remaining <- as.numeric(difftime(race_end_time, prev_time, units = "secs"))
-          max_lookahead <- max(600, min(time_remaining, 3 * time_remaining / legs_remaining))
-          cand <- trk |> filter(datetime_local >= prev_time, datetime_local <= prev_time + max_lookahead)
-          if (nrow(cand) == 0) cand <- trk |> filter(datetime_local >= prev_time)
+          cand <- trk |> filter(datetime_local >= prev_time)
           if (nrow(cand) == 0) next
           d <- geosphere::distHaversine(
             cbind(cand$longitude, cand$latitude),
             c(lon_num[i], lat_num[i])
           )
-          j <- which.min(d)
-          time_col[i] <- cand$datetime_local[j]
-          dist_to_mark_m[i] <- d[j]
+          best_d <- d[1]
+          best_j <- 1
+          for (j in seq_along(d)) {
+            if (d[j] < best_d) {
+              best_d <- d[j]
+              best_j <- j
+            } else if (d[j] > best_d + GIVEUP_M) {
+              break
+            }
+          }
+          time_col[i] <- cand$datetime_local[best_j]
+          dist_to_mark_m[i] <- best_d
           prev_time <- time_col[i]
         }
       }
@@ -2481,6 +2513,17 @@ server <- function(input, output, session) {
     course_df$leg_start      <- leg_start_col
     course_df$Time           <- time_col
     course_df$dist_to_mark_m <- dist_to_mark_m
+
+    # Anchor the finish to the scheduled/official finish time from the Race
+    # Calendar (mirroring race_course_table's "Race Start" row, which uses
+    # cal_row$start rather than a detected closest-approach time) instead of
+    # the GPS closest-approach to the finish mark's charted position, which
+    # can be a little early/late relative to the actual finish gun.
+    finish_pos <- which(course_cols[keep] == "finish_line")
+    if (length(finish_pos) == 1 && !is.na(cal_row$end)) {
+      course_df$Time[finish_pos] <- cal_row$end
+    }
+
     course_df
   })
 
