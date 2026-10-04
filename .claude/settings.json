@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "defaultMode": "default",
+    "ask": [
+      "PowerShell(git commit *)", "PowerShell(git push *)",
+      "Bash(git commit *)", "Bash(git push *)"
+    ]
+  }
+}
