@@ -24,9 +24,10 @@ Implementation plan: Wings_Analytics_Implementation_Plan.docx (kept by the owner
 - Polars.xlsx — ORC 2025 reference polar (TWS x TWA -> target boat speed).
 
 ## Data schema — track_data.rds is a named list
-- track_all: one row per GPS fix. Columns include datetime_utc, datetime_local,
-  day_local, latitude, longitude, sog_knots, cog_deg, stw_knots, twa_deg,
-  tws_knots, twd_deg, wind_type, Polar_Perf_STW, Polar_Perf_SOG, race, helm, headsail.
+- track_all: one row per GPS fix. Columns, in file order: line_index, datetime_utc,
+  datetime_local, day_local, sentence, latitude, longitude, sog_knots, cog_deg,
+  stw_knots, twa_deg, tws_knots, wind_type, twd_deg, polar_bsp_knots,
+  Polar_Perf_STW, Polar_Perf_SOG, race, helm, headsail.
 - race_calendar: one row per race segment, with pre-computed stats
   (avg_stw, max_stw, max_tws, polar_perf_stw, duration_hrs, nmea_count, and more).
 - polar_ref (wide) and polar_ref_long (tws, twa, bsp_ref).
